@@ -5,7 +5,11 @@ import type { NextRequest } from 'next/server'
 const ALLOWED_ORIGINS = [
   'http://localhost:4000',
   'http://localhost:3000',
-  ...(process.env.ALLOWED_ORIGINS?.split(',') || [])
+  // Domínios da Vercel (produção e preview)
+  'https://store-flow-one.vercel.app',
+  'https://store-flow-git-main-denilson-silvas-projects-63b429e7.vercel.app',
+  'https://store-flow-inurnro5e-denilson-silvas-projects-63b429e7.vercel.app',
+  ...(process.env.ALLOWED_ORIGINS?.split(',').filter(Boolean) || [])
 ]
 
 // Logger simples para Edge Runtime (não pode usar pino aqui)
@@ -32,7 +36,23 @@ function logRequest(req: NextRequest, status?: number, duration?: number) {
 // Verifica se a origem é permitida
 function isOriginAllowed(origin: string): boolean {
   if (!origin) return false
-  return ALLOWED_ORIGINS.includes(origin) || origin.includes('localhost')
+  
+  // Verifica se está na lista de origens permitidas
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    return true
+  }
+  
+  // Permite localhost em desenvolvimento
+  if (origin.includes('localhost')) {
+    return true
+  }
+  
+  // Permite qualquer subdomínio .vercel.app (para previews automáticos)
+  if (origin.match(/^https:\/\/.*\.vercel\.app$/)) {
+    return true
+  }
+  
+  return false
 }
 
 // Adiciona headers de segurança
