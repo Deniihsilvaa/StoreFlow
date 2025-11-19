@@ -7,7 +7,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ storeId: string }> | { storeId: string } },
 ) {
-  return withErrorHandling(async () => {
+  return withErrorHandling(async (_request: NextRequest) => {
     // Resolver params se for Promise (Next.js 15+)
     const resolvedParams = params instanceof Promise ? await params : params;
     return getStoreById(resolvedParams.storeId);
