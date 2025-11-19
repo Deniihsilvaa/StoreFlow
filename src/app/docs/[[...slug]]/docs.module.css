@@ -1,0 +1,241 @@
+.docsContainer {
+  display: flex;
+  min-height: 100vh;
+  background: var(--background);
+}
+
+.docsNav {
+  width: 280px;
+  min-width: 280px;
+  background: var(--nav-background, #202c38);
+  border-right: 1px solid var(--border-color, #e1e4e8);
+  overflow-y: auto;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.docsNavHeader {
+  padding: 1.5rem 1rem;
+  border-bottom: 1px solid var(--border-color, #e1e4e8);
+}
+
+.docsNavHeader h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--foreground);
+}
+
+.docsNavContent {
+  padding: 1rem 0;
+}
+
+.docsNavCategory {
+  margin-bottom: 0.5rem;
+}
+
+.docsNavCategoryToggle {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--foreground);
+  transition: background-color 0.2s;
+}
+
+.docsNavCategoryToggle:hover {
+  background: var(--hover-background, rgba(0, 0, 0, 0.05));
+}
+
+.docsNavCategoryIcon {
+  font-size: 0.75rem;
+  color: var(--text-muted, #6a737d);
+}
+
+.docsNavCategoryLabel {
+  font-size: 0.875rem;
+}
+
+.docsNavList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.docsNavItem {
+  width: 100%;
+  padding: 0.5rem 1rem 0.5rem 2rem;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted, #6a737d);
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.docsNavItem:hover {
+  background: var(--hover-background, rgba(0, 0, 0, 0.05));
+  color: var(--foreground);
+}
+
+.docsNavItem.active {
+  background: var(--active-background, rgba(59, 130, 246, 0.1));
+  color: var(--active-color, #3b82f6);
+  border-left-color: var(--active-color, #3b82f6);
+  font-weight: 500;
+}
+
+.docsMain {
+  flex: 1;
+  padding: 2rem 3rem;
+  max-width: 900px;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+
+.docViewer {
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+.docViewer :global(*) {
+  box-sizing: border-box;
+}
+
+.docViewer :global(.doc-h1) {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 2rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border-color, #e1e4e8);
+}
+
+.docViewer :global(.doc-h2) {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color, #e1e4e8);
+}
+
+.docViewer :global(.doc-h3) {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.docViewer :global(p) {
+  margin: 1rem 0;
+  line-height: 1.8;
+}
+
+.docViewer :global(ul),
+.docViewer :global(ol) {
+  margin: 1rem 0;
+  padding-left: 2rem;
+}
+
+.docViewer :global(li) {
+  margin: 0.5rem 0;
+}
+
+.docViewer :global(.doc-code-inline) {
+  background: var(--code-background, #f6f8fa);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  color: var(--code-color, #e83e8c);
+  border: 1px solid var(--code-border, #e1e4e8);
+}
+
+.docViewer :global(.doc-pre) {
+  background: var(--code-block-background, #1e1e1e);
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  border: 1px solid var(--code-border, #30363d);
+}
+
+.docViewer :global(.doc-code-block) {
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #d4d4d4;
+}
+
+.docViewer :global(.doc-link) {
+  color: var(--link-color, #3b82f6);
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.docViewer :global(.doc-link:hover) {
+  color: var(--link-hover-color, #2563eb);
+}
+
+.docViewer :global(.doc-table-wrapper) {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.docViewer :global(.doc-table) {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border-color, #e1e4e8);
+}
+
+.docViewer :global(.doc-table th),
+.docViewer :global(.doc-table td) {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color, #e1e4e8);
+}
+
+.docViewer :global(.doc-table th) {
+  background: var(--table-header-background, #f6f8fa);
+  font-weight: 600;
+}
+
+.docViewer :global(blockquote) {
+  border-left: 4px solid var(--blockquote-border, #3b82f6);
+  padding-left: 1rem;
+  margin: 1.5rem 0;
+  color: var(--text-muted, #6a737d);
+  font-style: italic;
+}
+
+.docViewer :global(hr) {
+  border: none;
+  border-top: 2px solid var(--border-color, #e1e4e8);
+  margin: 2rem 0;
+}
+
+@media (max-width: 768px) {
+  .docsContainer {
+    flex-direction: column;
+  }
+
+  .docsNav {
+    width: 100%;
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color, #e1e4e8);
+  }
+
+  .docsMain {
+    padding: 1.5rem;
+  }
+}
+
