@@ -64,24 +64,24 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response
 }
 
-export async function middleware(req: NextRequest) {
+export function middleware(request: NextRequest) {
   const startTime = Date.now()
-  const origin = req.headers.get('origin') || ''
-  const pathname = req.nextUrl.pathname
+  const origin = request.headers.get('origin') || ''
+  const pathname = request.nextUrl.pathname
 
   // Log da requisição recebida
-  logRequest(req)
+  logRequest(request)
 
   // Se não for uma rota /api, passa adiante
   if (!pathname.startsWith('/api/')) {
-    return NextResponse.next(req)
+    return NextResponse.next(request)
   }
 
   // Verifica se a origem é permitida
   const originAllowed = isOriginAllowed(origin)
 
   // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
-  if (req.method === 'OPTIONS') {
+  if (request.method === 'OPTIONS') {
     const res = new NextResponse(null, { status: 204 })
     
     if (originAllowed) {
@@ -93,12 +93,12 @@ export async function middleware(req: NextRequest) {
     }
     
     const duration = Date.now() - startTime
-    logRequest(req, 204, duration)
+    logRequest(request, 204, duration)
     return addSecurityHeaders(res)
   }
 
   // Para requisições normais, permite o fluxo mas injeta os headers
-  const res = NextResponse.next(req)
+  const res = NextResponse.next(request)
   
   // Headers CORS
   if (originAllowed) {
@@ -110,11 +110,10 @@ export async function middleware(req: NextRequest) {
   addSecurityHeaders(res)
   
   // Log após processamento (a duração real será logada no handler da rota)
-
   const duration = Date.now() - startTime
   if (duration > 100) {
     // Log apenas se demorar mais de 100ms no middleware
-    logRequest(req, undefined, duration)
+    logRequest(request, undefined, duration)
   }
   
   return res
