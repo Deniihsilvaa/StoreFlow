@@ -65,58 +65,79 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
 }
 
 export function middleware(request: NextRequest) {
-  const startTime = Date.now()
-  const origin = request.headers.get('origin') || ''
-  const pathname = request.nextUrl.pathname
+  try {
+    const startTime = Date.now()
+    const origin = request.headers.get('origin') || ''
+    const pathname = request.nextUrl.pathname
 
-  // Log da requisição recebida
-  logRequest(request)
+    // Log da requisição recebida
+    logRequest(request)
 
-  // Se não for uma rota /api, passa adiante
-  if (!pathname.startsWith('/api/')) {
-    return NextResponse.next(request)
-  }
+    // Se não for uma rota /api, passa adiante
+    if (!pathname.startsWith('/api/')) {
+      return NextResponse.next(request)
+    }
 
-  // Verifica se a origem é permitida
-  const originAllowed = isOriginAllowed(origin)
+    // Verifica se a origem é permitida
+    const originAllowed = isOriginAllowed(origin)
 
-  // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
-  if (request.method === 'OPTIONS') {
-    const res = new NextResponse(null, { status: 204 })
+    // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
+    if (request.method === 'OPTIONS') {
+      const res = new NextResponse(null, { status: 204 })
+      
+      if (originAllowed) {
+        res.headers.set('Access-Control-Allow-Origin', origin)
+        res.headers.set('Access-Control-Allow-Credentials', 'true')
+        res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+        res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+        res.headers.set('Access-Control-Max-Age', '86400')
+      }
+      
+      const duration = Date.now() - startTime
+      logRequest(request, 204, duration)
+      return addSecurityHeaders(res)
+    }
+
+    // Para requisições normais, permite o fluxo mas injeta os headers
+    const res = NextResponse.next(request)
     
+    // Headers CORS
     if (originAllowed) {
       res.headers.set('Access-Control-Allow-Origin', origin)
       res.headers.set('Access-Control-Allow-Credentials', 'true')
-      res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-      res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
-      res.headers.set('Access-Control-Max-Age', '86400')
     }
     
+    // Headers de segurança
+    addSecurityHeaders(res)
+    
+    // Log após processamento (a duração real será logada no handler da rota)
     const duration = Date.now() - startTime
-    logRequest(request, 204, duration)
-    return addSecurityHeaders(res)
+    if (duration > 100) {
+      // Log apenas se demorar mais de 100ms no middleware
+      logRequest(request, undefined, duration)
+    }
+    
+    return res
+  } catch (error) {
+    // Em caso de erro no middleware, retorna uma resposta de erro
+    console.error('Middleware error:', error)
+    return new NextResponse(
+      JSON.stringify({
+        success: false,
+        error: {
+          message: 'Erro no middleware',
+          code: 'MIDDLEWARE_ERROR',
+          status: 500,
+        },
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
   }
-
-  // Para requisições normais, permite o fluxo mas injeta os headers
-  const res = NextResponse.next(request)
-  
-  // Headers CORS
-  if (originAllowed) {
-    res.headers.set('Access-Control-Allow-Origin', origin)
-    res.headers.set('Access-Control-Allow-Credentials', 'true')
-  }
-  
-  // Headers de segurança
-  addSecurityHeaders(res)
-  
-  // Log após processamento (a duração real será logada no handler da rota)
-  const duration = Date.now() - startTime
-  if (duration > 100) {
-    // Log apenas se demorar mais de 100ms no middleware
-    logRequest(request, undefined, duration)
-  }
-  
-  return res
 }
 
 // Aplica esse middleware a TODAS as rotas que começam com /api/
