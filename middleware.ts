@@ -64,7 +64,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const startTime = Date.now()
   const origin = req.headers.get('origin') || ''
   const pathname = req.nextUrl.pathname
@@ -110,7 +110,7 @@ export function middleware(req: NextRequest) {
   addSecurityHeaders(res)
   
   // Log após processamento (a duração real será logada no handler da rota)
-  // Aqui só logamos que passou pelo middleware
+
   const duration = Date.now() - startTime
   if (duration > 100) {
     // Log apenas se demorar mais de 100ms no middleware
