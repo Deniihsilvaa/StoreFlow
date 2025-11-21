@@ -64,7 +64,9 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(
+  request: NextRequest
+) {
   try {
     const startTime = Date.now()
     const origin = request.headers.get('origin') || ''
@@ -75,7 +77,7 @@ export function middleware(request: NextRequest) {
 
     // Se não for uma rota /api, passa adiante
     if (!pathname.startsWith('/api/')) {
-      return NextResponse.next(request)
+      return NextResponse.next()
     }
 
     // Verifica se a origem é permitida
@@ -99,7 +101,7 @@ export function middleware(request: NextRequest) {
     }
 
     // Para requisições normais, permite o fluxo mas injeta os headers
-    const res = NextResponse.next(request)
+    const res = NextResponse.next()
     
     // Headers CORS
     if (originAllowed) {

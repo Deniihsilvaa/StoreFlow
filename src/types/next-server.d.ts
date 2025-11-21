@@ -8,7 +8,7 @@ declare module "next/server" {
       data: T,
       init?: ResponseInit,
     ): NextResponse<T>;
-    static next(request: NextRequest): NextResponse;
+    static next(request?: NextRequest): NextResponse;
     static rewrite(url: URL | string): NextResponse;
   }
 }
