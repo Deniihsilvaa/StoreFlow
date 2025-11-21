@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { ZodError } from "zod";
 
 import { ApiError } from "@/core/errors/ApiError";
@@ -52,8 +53,43 @@ export function normalizeError(error: unknown): ApiError {
   });
 }
 
-export function formatErrorResponse(error: ApiError): NextResponse<ErrorResponseBody> {
-  return NextResponse.json(
+// Helper para adicionar headers CORS baseado no request
+function addCorsHeaders(response: NextResponse, request?: NextRequest): NextResponse {
+  if (!request) return response;
+  
+  const origin = request.headers.get('origin');
+  
+  if (origin) {
+    // Lista de origens permitidas (deve corresponder ao middleware)
+    const ALLOWED_ORIGINS = [
+      'http://localhost:4000',
+      'http://localhost:3000',
+      'https://store-flow-one.vercel.app',
+      'https://store-flow-git-main-denilson-silvas-projects-63b429e7.vercel.app',
+      'https://store-flow-inurnro5e-denilson-silvas-projects-63b429e7.vercel.app',
+      ...(process.env.ALLOWED_ORIGINS?.split(',').filter(Boolean) || [])
+    ];
+    
+    // Verifica se a origem é permitida
+    const isAllowed = 
+      ALLOWED_ORIGINS.includes(origin) ||
+      origin.includes('localhost') ||
+      origin.match(/^https:\/\/.*\.vercel\.app$/);
+    
+    if (isAllowed) {
+      response.headers.set('Access-Control-Allow-Origin', origin);
+      response.headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+  }
+  
+  return response;
+}
+
+export function formatErrorResponse(
+  error: ApiError,
+  request?: NextRequest
+): NextResponse<ErrorResponseBody> {
+  const response = NextResponse.json(
     {
       success: false,
       error: {
@@ -66,5 +102,7 @@ export function formatErrorResponse(error: ApiError): NextResponse<ErrorResponse
     },
     { status: error.status },
   );
+  
+  return addCorsHeaders(response, request);
 }
 

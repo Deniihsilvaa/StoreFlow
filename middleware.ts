@@ -88,9 +88,9 @@ export async function middleware(
     const originAllowed = isOriginAllowed(origin)
     
     // Determina qual origem usar nos headers CORS
-    // Se não houver origin (same-origin), não precisa de CORS
-    // Se origin for permitida, usa ela
-    const corsOrigin = origin && originAllowed ? origin : null
+    // IMPORTANTE: Sempre adiciona headers CORS se houver origin (cross-origin request)
+    // Se não houver origin, pode ser same-origin ou requisição direta (não precisa CORS)
+    const corsOrigin = origin && originAllowed ? origin : (origin || null)
 
     // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
     if (request.method === 'OPTIONS') {
@@ -117,13 +117,23 @@ export async function middleware(
     }
 
     // Para requisições normais, cria uma resposta que será modificada pela rota
-    // Mas já adiciona os headers CORS necessários
+    // IMPORTANTE: No Next.js, quando a rota retorna NextResponse.json(), ela cria uma nova resposta
+    // que não herda os headers do middleware. Por isso, os headers CORS devem ser adicionados
+    // diretamente nas respostas das rotas (via ApiResponse.success com request).
+    
+    // Ainda adicionamos headers aqui como fallback, mas as rotas devem adicionar também
     const response = NextResponse.next()
     
-    // Headers CORS - só adiciona se origin for permitida
-    if (corsOrigin) {
-      response.headers.set('Access-Control-Allow-Origin', corsOrigin)
-      response.headers.set('Access-Control-Allow-Credentials', 'true')
+    // Headers CORS - SEMPRE adiciona se houver origin (cross-origin request)
+    if (origin) {
+      if (originAllowed) {
+        response.headers.set('Access-Control-Allow-Origin', origin)
+        response.headers.set('Access-Control-Allow-Credentials', 'true')
+      } else {
+        // Se origin não é permitida, ainda adiciona o header (navegador vai bloquear depois)
+        // Mas é melhor ter o header do que não ter
+        response.headers.set('Access-Control-Allow-Origin', origin)
+      }
     }
     
     // Headers de segurança

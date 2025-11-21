@@ -7,10 +7,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ productId: string }> | { productId: string } },
 ) {
-  return withErrorHandling(async () => {
+  return withErrorHandling(async (req: NextRequest) => {
     // Resolver params se for Promise (Next.js 15+)
     const resolvedParams = params instanceof Promise ? await params : params;
-    return getProductById(resolvedParams.productId);
+    return getProductById(resolvedParams.productId, req);
   })(request, {});
 }
 

@@ -4,7 +4,7 @@ import { ApiResponse } from "@/core/responses/ApiResponse";
 import { ApiError } from "@/core/errors/ApiError";
 import { storesService } from "../service/stores.service";
 
-export async function getStoreById(storeId: string) {
+export async function getStoreById(storeId: string, request?: NextRequest) {
   if (!storeId) {
     throw ApiError.validation(
       { storeId: ["Parâmetro storeId é obrigatório"] },
@@ -18,6 +18,6 @@ export async function getStoreById(storeId: string) {
     throw ApiError.notFound("Loja não encontrada");
   }
 
-  return ApiResponse.success(store);
+  return ApiResponse.success(store, { request });
 }
 

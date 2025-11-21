@@ -7,15 +7,18 @@ import { parsePagination } from "@/core/utils/pagination";
 export const GET = withErrorHandling(async (request: NextRequest) => {
   const pagination = parsePagination(request);
 
-  return ApiResponse.success({
-    items: [],
-    pagination: {
-      ...pagination,
-      total: 0,
-      totalPages: 0,
-      hasNext: false,
-      hasPrev: false,
+  return ApiResponse.success(
+    {
+      items: [],
+      pagination: {
+        ...pagination,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
     },
-  });
+    { request }
+  );
 });
 

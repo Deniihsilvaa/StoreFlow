@@ -15,7 +15,7 @@ export function withErrorHandling<T = unknown>(
       return await handler(request, context);
     } catch (error) {
       const normalized = normalizeError(error);
-      return formatErrorResponse(normalized);
+      return formatErrorResponse(normalized, request);
     }
   };
 }

@@ -23,19 +23,22 @@ export async function listProducts(request: NextRequest) {
 
   const totalPages = Math.ceil(total / pagination.limit);
 
-  return ApiResponse.success({
-    items,
-    pagination: {
-      ...pagination,
-      total,
-      totalPages,
-      hasNext: pagination.page < totalPages,
-      hasPrev: pagination.page > 1,
+  return ApiResponse.success(
+    {
+      items,
+      pagination: {
+        ...pagination,
+        total,
+        totalPages,
+        hasNext: pagination.page < totalPages,
+        hasPrev: pagination.page > 1,
+      },
     },
-  });
+    { request }
+  );
 }
 
-export async function getProductById(productId: string) {
+export async function getProductById(productId: string, request?: NextRequest) {
   if (!productId) {
     throw ApiError.validation(
       { productId: ["Parâmetro productId é obrigatório"] },
@@ -49,6 +52,6 @@ export async function getProductById(productId: string) {
     throw ApiError.notFound("Produto não encontrado");
   }
 
-  return ApiResponse.success(product);
+  return ApiResponse.success(product, { request });
 }
 
