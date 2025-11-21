@@ -9,6 +9,7 @@ const ALLOWED_ORIGINS = [
   'https://store-flow-one.vercel.app',
   'https://store-flow-git-main-denilson-silvas-projects-63b429e7.vercel.app',
   'https://store-flow-inurnro5e-denilson-silvas-projects-63b429e7.vercel.app',
+  'https://store-flow-one.vercel.app',
   ...(process.env.ALLOWED_ORIGINS?.split(',').filter(Boolean) || [])
 ]
 
