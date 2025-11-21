@@ -18,25 +18,28 @@ function logRequest(req: NextRequest, status?: number, duration?: number) {
   const method = req.method
   const path = req.nextUrl.pathname
   const origin = req.headers.get('origin') || 'no-origin'
+  const referer = req.headers.get('referer') || 'no-referer'
   
   const logData = {
     method,
     path,
     origin,
+    referer,
     status: status || 'pending',
     duration: duration ? `${duration}ms` : undefined,
     timestamp: new Date().toISOString(),
   }
   
-  // Em produção, você pode enviar para um serviço de logging
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`[${method}] ${path}`, logData)
+  // Log sempre em desenvolvimento, e em produção para CORS issues
+  if (process.env.NODE_ENV === 'development' || method === 'OPTIONS') {
+    console.log(`[MIDDLEWARE] ${method} ${path}`, logData)
   }
 }
 
 // Verifica se a origem é permitida
 function isOriginAllowed(origin: string): boolean {
-  if (!origin) return false
+  // Se não houver origin (requisição same-origin), permite
+  if (!origin) return true
   
   // Verifica se está na lista de origens permitidas
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -83,48 +86,64 @@ export async function middleware(
 
     // Verifica se a origem é permitida
     const originAllowed = isOriginAllowed(origin)
+    
+    // Determina qual origem usar nos headers CORS
+    // Se não houver origin (same-origin), não precisa de CORS
+    // Se origin for permitida, usa ela
+    const corsOrigin = origin && originAllowed ? origin : null
 
     // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
     if (request.method === 'OPTIONS') {
       const res = new NextResponse(null, { status: 204 })
       
-      if (originAllowed) {
-        res.headers.set('Access-Control-Allow-Origin', origin)
+      // Para preflight, SEMPRE responde com headers CORS válidos
+      if (corsOrigin) {
+        res.headers.set('Access-Control-Allow-Origin', corsOrigin)
         res.headers.set('Access-Control-Allow-Credentials', 'true')
-        res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-        res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
-        res.headers.set('Access-Control-Max-Age', '86400')
+      } else if (origin) {
+        // Se há origin mas não é permitida, ainda responde ao preflight
+        // O navegador vai bloquear a requisição real depois, mas precisa de resposta ao preflight
+        res.headers.set('Access-Control-Allow-Origin', origin)
       }
+      // Se não há origin (same-origin), não precisa de CORS headers
+      
+      res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+      res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+      res.headers.set('Access-Control-Max-Age', '86400')
       
       const duration = Date.now() - startTime
       logRequest(request, 204, duration)
       return addSecurityHeaders(res)
     }
 
-    // Para requisições normais, permite o fluxo mas injeta os headers
-    const res = NextResponse.next()
+    // Para requisições normais, cria uma resposta que será modificada pela rota
+    // Mas já adiciona os headers CORS necessários
+    const response = NextResponse.next()
     
-    // Headers CORS
-    if (originAllowed) {
-      res.headers.set('Access-Control-Allow-Origin', origin)
-      res.headers.set('Access-Control-Allow-Credentials', 'true')
+    // Headers CORS - só adiciona se origin for permitida
+    if (corsOrigin) {
+      response.headers.set('Access-Control-Allow-Origin', corsOrigin)
+      response.headers.set('Access-Control-Allow-Credentials', 'true')
     }
     
     // Headers de segurança
-    addSecurityHeaders(res)
+    addSecurityHeaders(response)
     
     // Log após processamento (a duração real será logada no handler da rota)
     const duration = Date.now() - startTime
-    if (duration > 100) {
-      // Log apenas se demorar mais de 100ms no middleware
+    if (duration > 100 || process.env.NODE_ENV === 'development') {
       logRequest(request, undefined, duration)
     }
     
-    return res
+    return response
   } catch (error) {
-    // Em caso de erro no middleware, retorna uma resposta de erro
-    console.error('Middleware error:', error)
-    return new NextResponse(
+    // Em caso de erro no middleware, retorna uma resposta de erro com CORS
+    console.error('[MIDDLEWARE ERROR]', error)
+    const origin = request.headers.get('origin') || ''
+    const originAllowed = isOriginAllowed(origin)
+    const corsOrigin = origin && originAllowed ? origin : null
+    
+    const errorResponse = new NextResponse(
       JSON.stringify({
         success: false,
         error: {
@@ -140,6 +159,13 @@ export async function middleware(
         },
       }
     )
+    
+    if (corsOrigin) {
+      errorResponse.headers.set('Access-Control-Allow-Origin', corsOrigin)
+      errorResponse.headers.set('Access-Control-Allow-Credentials', 'true')
+    }
+    
+    return addSecurityHeaders(errorResponse)
   }
 }
 
