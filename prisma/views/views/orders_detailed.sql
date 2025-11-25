@@ -47,7 +47,7 @@ FROM
         (
           (
             (
-              orders.orders o
+              orders o
               JOIN public.stores s ON (
                 (
                   (s.id = o.store_id)
@@ -62,7 +62,7 @@ FROM
               )
             )
           )
-          LEFT JOIN orders.order_delivery_addresses oda ON (
+          LEFT JOIN order_delivery_addresses oda ON (
             (
               (oda.order_id = o.id)
               AND (oda.deleted_at IS NULL)
@@ -76,14 +76,14 @@ FROM
           )
         )
       )
-      LEFT JOIN orders.order_items oi ON (
+      LEFT JOIN order_items oi ON (
         (
           (oi.order_id = o.id)
           AND (oi.deleted_at IS NULL)
         )
       )
     )
-    LEFT JOIN orders.order_status_history osh ON (
+    LEFT JOIN order_status_history osh ON (
       (
         (osh.order_id = o.id)
         AND (osh.deleted_at IS NULL)

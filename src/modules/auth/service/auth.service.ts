@@ -1,6 +1,7 @@
 import { prisma } from "@/infra/prisma/client";
-import { supabaseAuthClient } from "@/infra/supabase/client";
+import { supabaseAuthClient, supabaseClient } from "@/infra/supabase/client";
 
+import { ApiError } from "@/core/errors/ApiError";
 import type { CustomerLoginInput } from "@/modules/auth/dto/customer-login.dto";
 import type { CustomerSignUpInput } from "@/modules/auth/dto/customer-signup.dto";
 import type { MerchantLoginInput } from "@/modules/auth/dto/merchant-login.dto";
@@ -130,14 +131,229 @@ export class AuthService {
     return { success: true };
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  async getProfile(_userId: string) {
-    throw new Error("getProfile ainda não foi implementado");
+  /**
+   * Busca o perfil completo do usuário incluindo dados básicos e endereços
+   * 
+   * @param userId - ID do usuário autenticado (auth_user_id)
+   * @returns Perfil do cliente com endereços
+   * @throws ApiError.notFound se o cliente não for encontrado
+   */
+  async getProfile(userId: string) {
+    // Buscar cliente pelo auth_user_id
+    const customer = await prisma.customers.findFirst({
+      where: {
+        auth_user_id: userId,
+        deleted_at: null,
+      },
+      include: {
+        customer_addresses: {
+          where: {
+            deleted_at: null,
+          },
+          orderBy: [
+            { is_default: 'desc' },
+            { created_at: 'desc' },
+          ],
+        },
+      },
+    });
+
+    if (!customer) {
+      throw ApiError.notFound("Cliente não encontrado", "CUSTOMER_NOT_FOUND");
+    }
+
+    // Buscar email do usuário no Supabase Auth usando service role
+    const { data: authUser, error: authError } = await supabaseClient.auth.admin.getUserById(userId);
+    const email = authUser?.user?.email || null;
+    
+    // Se houver erro ao buscar email, continuar sem email (não é crítico)
+    if (authError) {
+      console.warn(`[getProfile] Erro ao buscar email do usuário ${userId}:`, authError.message);
+    }
+
+    return {
+      id: customer.id,
+      auth_user_id: customer.auth_user_id,
+      name: customer.name,
+      phone: customer.phone,
+      email,
+      addresses: customer.customer_addresses.map((address) => ({
+        id: address.id,
+        label: address.label,
+        addressType: address.address_type,
+        street: address.street,
+        number: address.number,
+        neighborhood: address.neighborhood,
+        city: address.city,
+        state: address.state,
+        zipCode: address.zip_code,
+        complement: address.complement,
+        reference: address.reference,
+        isDefault: address.is_default,
+        createdAt: address.created_at,
+        updatedAt: address.updated_at,
+      })),
+      createdAt: customer.created_at,
+      updatedAt: customer.updated_at,
+    };
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  async updateProfile(_userId: string, _input: UpdateProfileInput) {
-    throw new Error("updateProfile ainda não foi implementado");
+  /**
+   * Atualiza o perfil do usuário incluindo dados básicos e endereços
+   * 
+   * @param userId - ID do usuário autenticado (auth_user_id)
+   * @param input - Dados para atualização (name, phone, addresses)
+   * @returns Perfil atualizado do cliente
+   * @throws ApiError.notFound se o cliente não for encontrado
+   * @throws ApiError.validation se o telefone já estiver em uso
+   */
+  async updateProfile(userId: string, input: UpdateProfileInput) {
+    // Verificar se o cliente existe
+    const existingCustomer = await prisma.customers.findFirst({
+      where: {
+        auth_user_id: userId,
+        deleted_at: null,
+      },
+    });
+
+    if (!existingCustomer) {
+      throw ApiError.notFound("Cliente não encontrado", "CUSTOMER_NOT_FOUND");
+    }
+
+    // Validar telefone único se estiver sendo atualizado
+    if (input.phone && input.phone !== existingCustomer.phone) {
+      const phoneExists = await prisma.customers.findFirst({
+        where: {
+          phone: input.phone,
+          id: { not: existingCustomer.id },
+          deleted_at: null,
+        },
+      });
+
+      if (phoneExists) {
+        throw ApiError.validation(
+          { phone: ["Este telefone já está em uso"] },
+          "Telefone já cadastrado",
+        );
+      }
+    }
+
+    // Atualizar usando transação para garantir consistência
+    const updatedCustomer = await prisma.$transaction(async (tx) => {
+      // Atualizar dados básicos do cliente
+      const updateData: {
+        name?: string;
+        phone?: string;
+        updated_at: Date;
+      } = {
+        updated_at: new Date(),
+      };
+
+      if (input.name !== undefined) {
+        updateData.name = input.name;
+      }
+
+      if (input.phone !== undefined) {
+        updateData.phone = input.phone;
+      }
+
+      const customer = await tx.customers.update({
+        where: { id: existingCustomer.id },
+        data: updateData,
+      });
+
+      // Gerenciar endereços se fornecidos
+      // IMPORTANTE: Se addresses for fornecido (mesmo que vazio), substitui todos os endereços
+      // Se não for fornecido, mantém os endereços existentes
+      if (input.addresses !== undefined) {
+        // Primeiro, fazer hard delete de todos os endereços existentes (incluindo soft deleted)
+        // Isso garante que não há conflito com constraint única que possa existir no banco
+        // O erro sugere que há uma constraint única em customer_id que não está no schema
+        await tx.customer_addresses.deleteMany({
+          where: {
+            customer_id: customer.id,
+          },
+        });
+
+        if (input.addresses.length > 0) {
+          // Criar novos endereços
+          let firstDefaultFound = false;
+          for (const address of input.addresses) {
+            // Garantir que apenas o primeiro endereço marcado como default seja realmente default
+            const isDefault = address.isDefault === true && !firstDefaultFound;
+            if (isDefault) {
+              firstDefaultFound = true;
+            }
+
+            await tx.customer_addresses.create({
+              data: {
+                customer_id: customer.id,
+                label: address.label || null,
+                address_type: (address.addressType || 'other') as 'home' | 'work' | 'other',
+                street: address.street,
+                number: address.number,
+                neighborhood: address.neighborhood,
+                city: address.city,
+                state: address.state,
+                zip_code: address.zipCode,
+                complement: address.complement || null,
+                reference: address.reference || null,
+                is_default: isDefault,
+              },
+            });
+          }
+        }
+      }
+
+      // Buscar endereços atualizados
+      const addresses = await tx.customer_addresses.findMany({
+        where: {
+          customer_id: customer.id,
+          deleted_at: null,
+        },
+        orderBy: [
+          { is_default: 'desc' },
+          { created_at: 'desc' },
+        ],
+      });
+
+      return { customer, addresses };
+    });
+
+    // Buscar email do usuário no Supabase Auth usando service role
+    const { data: authUser, error: authError } = await supabaseClient.auth.admin.getUserById(userId);
+    const email = authUser?.user?.email || null;
+    
+    // Se houver erro ao buscar email, continuar sem email (não é crítico)
+    if (authError) {
+      console.warn(`[updateProfile] Erro ao buscar email do usuário ${userId}:`, authError.message);
+    }
+
+    return {
+      id: updatedCustomer.customer.id,
+      auth_user_id: updatedCustomer.customer.auth_user_id,
+      name: updatedCustomer.customer.name,
+      phone: updatedCustomer.customer.phone,
+      email,
+      addresses: updatedCustomer.addresses.map((address) => ({
+        id: address.id,
+        label: address.label,
+        addressType: address.address_type,
+        street: address.street,
+        number: address.number,
+        neighborhood: address.neighborhood,
+        city: address.city,
+        state: address.state,
+        zipCode: address.zip_code,
+        complement: address.complement,
+        reference: address.reference,
+        isDefault: address.is_default,
+        createdAt: address.created_at,
+        updatedAt: address.updated_at,
+      })),
+      createdAt: updatedCustomer.customer.created_at,
+      updatedAt: updatedCustomer.customer.updated_at,
+    };
   }
   // eslint-disable-next-line class-methods-use-this
   async customerSignUp(input: CustomerSignUpInput): Promise<CustomerSignUpResult> {

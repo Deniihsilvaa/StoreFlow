@@ -383,15 +383,35 @@ export class OrdersService {
 
     const totalAmount = subtotal + deliveryFee;
 
+    // Verificar se a tabela orders existe no schema 'orders'
+    const checkTableQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'orders' 
+        AND table_name = 'orders'
+      ) as table_exists
+    `;
+
+    const tableCheck = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string) => Promise<Array<{ table_exists: boolean }>>;
+    }).$queryRawUnsafe(checkTableQuery)) as Array<{ table_exists: boolean }>;
+
+    if (!tableCheck[0]?.table_exists) {
+      throw new Error(
+        "Tabela 'orders.orders' não encontrada no banco de dados. " +
+        "Por favor, verifique se a tabela existe ou se o schema do Prisma está atualizado."
+      );
+    }
+
     // Criar pedido usando transação
     const orderId = await (prisma as unknown as {
       $transaction: <T>(callback: (tx: {
         $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
       }) => Promise<T>) => Promise<T>;
     }).$transaction(async (tx) => {
-      // Inserir pedido
+      // Inserir pedido no schema 'orders'
       const insertOrderQuery = `
-        INSERT INTO public.orders (
+        INSERT INTO orders.orders (
           store_id, customer_id, delivery_option_id, fulfillment_method,
           pickup_slot, total_amount, delivery_fee, status, payment_method,
           payment_status, observations, created_at, updated_at
@@ -424,12 +444,32 @@ export class OrdersService {
         const product = productsResult.find((p) => p.id === item.productId);
         if (!product) continue;
 
+        // Buscar informações completas do produto para order_items
+        const productInfoQuery = `
+          SELECT name, family
+          FROM public.products
+          WHERE id = $1::uuid
+        `;
+        const productInfo = (await tx.$queryRawUnsafe(
+          productInfoQuery,
+          item.productId,
+        )) as Array<{ name: string; family: string }>;
+
+        if (productInfo.length === 0) continue;
+
+        const productName = productInfo[0].name;
+        const productFamily = productInfo[0].family;
+        const unitPrice = Number(product.price);
+        const totalPrice = unitPrice * item.quantity;
+
         const insertItemQuery = `
-          INSERT INTO public.order_items (
-            order_id, product_id, quantity, unit_price, observations, created_at, updated_at
+          INSERT INTO orders.order_items (
+            order_id, product_id, product_name, product_family, quantity, 
+            unit_price, total_price, observations, created_at
           )
           VALUES (
-            $1::uuid, $2::uuid, $3::int, $4::decimal, $5::text, NOW(), NOW()
+            $1::uuid, $2::uuid, $3::text, $4::text, $5::int, 
+            $6::decimal, $7::decimal, $8::text, NOW()
           )
           RETURNING id
         `;
@@ -438,8 +478,11 @@ export class OrdersService {
           insertItemQuery,
           newOrderId,
           item.productId,
+          productName,
+          productFamily,
           item.quantity,
-          Number(product.price).toFixed(2),
+          unitPrice.toFixed(2),
+          totalPrice.toFixed(2),
           item.observations || null,
         )) as Array<{ id: string }>;
 
@@ -448,12 +491,38 @@ export class OrdersService {
         // Inserir customizações do item
         if (item.customizations && item.customizations.length > 0) {
           for (const customization of item.customizations) {
+            // Buscar informações da customização do produto
+            const customizationInfoQuery = `
+              SELECT name, customization_type, selection_type, price
+              FROM public.product_customizations
+              WHERE id = $1::uuid
+            `;
+            const customizationInfo = (await tx.$queryRawUnsafe(
+              customizationInfoQuery,
+              customization.customizationId,
+            )) as Array<{
+              name: string;
+              customization_type: string;
+              selection_type: string;
+              price: number;
+            }>;
+
+            if (customizationInfo.length === 0) continue;
+
+            const custInfo = customizationInfo[0];
+            const custUnitPrice = Number(custInfo.price);
+            const custQuantity = typeof customization.value === 'number' 
+              ? customization.value 
+              : (customization.value === true || customization.value === 'true' ? 1 : 0);
+            const custTotalPrice = custUnitPrice * custQuantity;
+
             const insertCustomizationQuery = `
-              INSERT INTO public.order_item_customizations (
-                order_item_id, customization_id, value, created_at, updated_at
+              INSERT INTO orders.order_item_customizations (
+                order_item_id, customization_id, customization_name, customization_type, 
+                selection_type, quantity, unit_price, total_price, created_at
               )
               VALUES (
-                $1::uuid, $2::uuid, $3::text, NOW(), NOW()
+                $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::int, $7::decimal, $8::decimal, NOW()
               )
             `;
 
@@ -461,7 +530,12 @@ export class OrdersService {
               insertCustomizationQuery,
               itemId,
               customization.customizationId,
-              String(customization.value),
+              custInfo.name,
+              custInfo.customization_type,
+              custInfo.selection_type,
+              custQuantity,
+              custUnitPrice.toFixed(2),
+              custTotalPrice.toFixed(2),
             );
           }
         }
@@ -470,11 +544,11 @@ export class OrdersService {
       // Se for delivery, inserir endereço de entrega
       if (input.fulfillmentMethod === "delivery" && input.deliveryAddress) {
         const insertAddressQuery = `
-          INSERT INTO public.order_delivery_addresses (
-            order_id, street, number, neighborhood, city, state, zip_code, complement, created_at, updated_at
+          INSERT INTO orders.order_delivery_addresses (
+            order_id, street, number, neighborhood, city, state, zip_code, complement, created_at
           )
           VALUES (
-            $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::text, NOW(), NOW()
+            $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::text, NOW()
           )
         `;
 

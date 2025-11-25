@@ -9,7 +9,7 @@ SELECT
   count(DISTINCT o.id) AS total_orders,
   count(DISTINCT o.id) FILTER (
     WHERE
-      (o.status = 'delivered' :: orders.order_status_enum)
+      (o.status = 'delivered' :: order_status_enum)
   ) AS delivered_orders,
   count(DISTINCT o.id) FILTER (
     WHERE
@@ -40,7 +40,7 @@ FROM
     (
       (
         public.customers c
-        LEFT JOIN orders.orders o ON (
+        LEFT JOIN orders o ON (
           (
             (o.customer_id = c.id)
             AND (o.deleted_at IS NULL)

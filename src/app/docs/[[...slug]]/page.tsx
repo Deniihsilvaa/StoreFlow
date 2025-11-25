@@ -36,6 +36,11 @@ const DOCS: DocItem[] = [
     category: "api",
   },
   {
+    title: "Perfil",
+    path: "api/profile",
+    category: "api",
+  },
+  {
     title: "Lojas",
     path: "api/stores",
     category: "api",

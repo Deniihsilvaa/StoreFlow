@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  schemas   = ["auth", "permissions", "public", "views"]
+  schemas   = ["auth", "orders", "permissions", "public", "views"]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -392,6 +392,7 @@ model users {
   oauth_consents              oauth_consents[]
   one_time_tokens             one_time_tokens[]
   sessions                    sessions[]
+  order_status_history        order_status_history[]
   customers                   customers?
   merchants                   merchants?
 
@@ -432,6 +433,7 @@ model customers {
   deleted_at         DateTime?            @db.Timestamptz(6)
   created_at         DateTime             @default(now()) @db.Timestamptz(6)
   updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  orders             orders[]
   store_costumer     store_costumer[]
   customer_addresses customer_addresses[]
   users              users?               @relation(fields: [auth_user_id], references: [id], onUpdate: NoAction)
@@ -456,17 +458,18 @@ model merchants {
 }
 
 model product_customizations {
-  id                 String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  product_id         String                          @db.Uuid
-  name               String
-  customization_type product_customization_type_enum @default(extra)
-  price              Decimal                         @default(0) @db.Decimal(10, 2)
-  selection_type     selection_type_enum             @default(quantity)
-  selection_group    String?
-  deleted_at         DateTime?                       @db.Timestamptz(6)
-  created_at         DateTime                        @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime                        @default(now()) @db.Timestamptz(6)
-  products           products                        @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                        String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id                String                          @db.Uuid
+  name                      String
+  customization_type        product_customization_type_enum @default(extra)
+  price                     Decimal                         @default(0) @db.Decimal(10, 2)
+  selection_type            selection_type_enum             @default(quantity)
+  selection_group           String?
+  deleted_at                DateTime?                       @db.Timestamptz(6)
+  created_at                DateTime                        @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                        @default(now()) @db.Timestamptz(6)
+  order_item_customizations order_item_customizations[]
+  products                  products                        @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }
@@ -535,6 +538,7 @@ model products {
   deleted_at                       DateTime?                          @db.Timestamptz(6)
   created_at                       DateTime                           @default(now()) @db.Timestamptz(6)
   updated_at                       DateTime                           @default(now()) @db.Timestamptz(6)
+  order_items                      order_items[]
   product_customizations           product_customizations[]
   product_extra_list_applicability product_extra_list_applicability[]
   stores                           stores                             @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -576,6 +580,7 @@ model store_delivery_options {
   deleted_at     DateTime? @db.Timestamptz(6)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+  orders         orders[]
   stores         stores    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
@@ -647,6 +652,7 @@ model stores {
   legal_responsible_name          String?
   legal_responsible_document      String?
   terms_accepted_at               DateTime?                @db.Timestamptz(6)
+  orders                          orders[]
   permission_profiles             permission_profiles[]
   store_costumer                  store_costumer[]
   product_extra_lists             product_extra_lists[]
@@ -724,6 +730,108 @@ model store_costumer {
   @@schema("permissions")
 }
 
+model order_delivery_addresses {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id     String    @db.Uuid
+  street       String
+  number       String
+  neighborhood String
+  city         String
+  state        String
+  zip_code     String
+  complement   String?
+  reference    String?
+  deleted_at   DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  orders       orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("orders")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_item_customizations {
+  id                     String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_item_id          String                                 @db.Uuid
+  customization_id       String?                                @db.Uuid
+  customization_name     String
+  customization_type     orders_product_customization_type_enum
+  selection_type         orders_selection_type_enum
+  selection_group        String?
+  quantity               Int                                    @default(1)
+  unit_price             Decimal                                @default(0) @db.Decimal(10, 2)
+  total_price            Decimal                                @default(0) @db.Decimal(10, 2)
+  deleted_at             DateTime?                              @db.Timestamptz(6)
+  created_at             DateTime                               @default(now()) @db.Timestamptz(6)
+  product_customizations product_customizations?                @relation(fields: [customization_id], references: [id], onUpdate: NoAction)
+  order_items            order_items                            @relation(fields: [order_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("orders")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id                  String                      @db.Uuid
+  product_id                String?                     @db.Uuid
+  product_name              String
+  product_family            orders_product_family_enum
+  quantity                  Int
+  unit_price                Decimal                     @db.Decimal(10, 2)
+  unit_cost_price           Decimal?                    @db.Decimal(10, 2)
+  total_price               Decimal                     @db.Decimal(10, 2)
+  observations              String?
+  deleted_at                DateTime?                   @db.Timestamptz(6)
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  order_item_customizations order_item_customizations[]
+  orders                    orders                      @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products                  products?                   @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@schema("orders")
+}
+
+model order_status_history {
+  id         String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id   String                   @db.Uuid
+  status     orders_order_status_enum
+  changed_by String?                  @db.Uuid
+  note       String?
+  deleted_at DateTime?                @db.Timestamptz(6)
+  created_at DateTime                 @default(now()) @db.Timestamptz(6)
+  users      users?                   @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders     orders                   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("orders")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  id                       String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  store_id                 String                         @db.Uuid
+  customer_id              String                         @db.Uuid
+  delivery_option_id       String?                        @db.Uuid
+  fulfillment_method       orders_fulfillment_method_enum
+  pickup_slot              DateTime?                      @db.Timestamptz(6)
+  total_amount             Decimal                        @db.Decimal(10, 2)
+  delivery_fee             Decimal                        @default(0) @db.Decimal(10, 2)
+  status                   orders_order_status_enum       @default(pending)
+  payment_method           orders_payment_method_enum
+  payment_status           orders_payment_status_enum     @default(pending)
+  estimated_delivery_time  DateTime?                      @db.Timestamptz(6)
+  observations             String?
+  cancellation_reason      String?
+  deleted_at               DateTime?                      @db.Timestamptz(6)
+  created_at               DateTime                       @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                       @default(now()) @db.Timestamptz(6)
+  order_delivery_addresses order_delivery_addresses[]
+  order_items              order_items[]
+  order_status_history     order_status_history[]
+  customers                customers                      @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  store_delivery_options   store_delivery_options?        @relation(fields: [delivery_option_id], references: [id], onUpdate: NoAction)
+  stores                   stores                         @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("orders")
+}
+
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 view products_enriched {
   id                       String?              @db.Uuid
@@ -755,23 +863,23 @@ view products_enriched {
 
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 view order_items_complete {
-  id                      String?              @db.Uuid
-  order_id                String?              @db.Uuid
-  product_id              String?              @db.Uuid
+  id                      String?                     @db.Uuid
+  order_id                String?                     @db.Uuid
+  product_id              String?                     @db.Uuid
   product_name            String?
-  product_family          product_family_enum?
+  product_family          orders_product_family_enum?
   quantity                Int?
-  unit_price              Decimal?             @db.Decimal(10, 2)
-  unit_cost_price         Decimal?             @db.Decimal(10, 2)
-  total_price             Decimal?             @db.Decimal(10, 2)
+  unit_price              Decimal?                    @db.Decimal(10, 2)
+  unit_cost_price         Decimal?                    @db.Decimal(10, 2)
+  total_price             Decimal?                    @db.Decimal(10, 2)
   observations            String?
-  deleted_at              DateTime?            @db.Timestamptz(6)
-  created_at              DateTime?            @db.Timestamptz(6)
-  store_id                String?              @db.Uuid
-  order_status            order_status_enum?
+  deleted_at              DateTime?                   @db.Timestamptz(6)
+  created_at              DateTime?                   @db.Timestamptz(6)
+  store_id                String?                     @db.Uuid
+  order_status            orders_order_status_enum?
   product_family_original product_family_enum?
   product_image_url       String?
-  customizations          Json?                @db.Json
+  customizations          Json?                       @db.Json
 
   @@ignore
   @@schema("views")
@@ -850,23 +958,23 @@ view stores_complete {
 
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 view orders_detailed {
-  id                      String?                  @db.Uuid
-  store_id                String?                  @db.Uuid
-  customer_id             String?                  @db.Uuid
-  delivery_option_id      String?                  @db.Uuid
-  fulfillment_method      fulfillment_method_enum?
-  pickup_slot             DateTime?                @db.Timestamptz(6)
-  total_amount            Decimal?                 @db.Decimal(10, 2)
-  delivery_fee            Decimal?                 @db.Decimal(10, 2)
-  status                  order_status_enum?
-  payment_method          payment_method_enum?
-  payment_status          payment_status_enum?
-  estimated_delivery_time DateTime?                @db.Timestamptz(6)
+  id                      String?                         @db.Uuid
+  store_id                String?                         @db.Uuid
+  customer_id             String?                         @db.Uuid
+  delivery_option_id      String?                         @db.Uuid
+  fulfillment_method      orders_fulfillment_method_enum?
+  pickup_slot             DateTime?                       @db.Timestamptz(6)
+  total_amount            Decimal?                        @db.Decimal(10, 2)
+  delivery_fee            Decimal?                        @db.Decimal(10, 2)
+  status                  orders_order_status_enum?
+  payment_method          orders_payment_method_enum?
+  payment_status          orders_payment_status_enum?
+  estimated_delivery_time DateTime?                       @db.Timestamptz(6)
   observations            String?
   cancellation_reason     String?
-  deleted_at              DateTime?                @db.Timestamptz(6)
-  created_at              DateTime?                @db.Timestamptz(6)
-  updated_at              DateTime?                @db.Timestamptz(6)
+  deleted_at              DateTime?                       @db.Timestamptz(6)
+  created_at              DateTime?                       @db.Timestamptz(6)
+  updated_at              DateTime?                       @db.Timestamptz(6)
   store_name              String?
   store_slug              String?
   customer_name           String?
@@ -878,10 +986,10 @@ view orders_detailed {
   delivery_state          String?
   delivery_zip_code       String?
   delivery_option_name    String?
-  delivery_option_fee     Decimal?                 @db.Decimal(10, 2)
+  delivery_option_fee     Decimal?                        @db.Decimal(10, 2)
   items_count             BigInt?
   total_items             BigInt?
-  status_history          Json?                    @db.Json
+  status_history          Json?                           @db.Json
 
   @@ignore
   @@schema("views")
@@ -1128,4 +1236,72 @@ enum permission_action_enum {
   manage
 
   @@schema("permissions")
+}
+
+enum orders_fulfillment_method_enum {
+  delivery
+  pickup
+
+  @@map("fulfillment_method_enum")
+  @@schema("orders")
+}
+
+enum orders_order_status_enum {
+  pending
+  confirmed
+  preparing
+  ready
+  out_for_delivery
+  delivered
+  cancelled
+
+  @@map("order_status_enum")
+  @@schema("orders")
+}
+
+enum orders_payment_method_enum {
+  credit_card
+  debit_card
+  pix
+  cash
+
+  @@map("payment_method_enum")
+  @@schema("orders")
+}
+
+enum orders_payment_status_enum {
+  pending
+  paid
+  failed
+
+  @@map("payment_status_enum")
+  @@schema("orders")
+}
+
+enum orders_product_customization_type_enum {
+  extra
+  sauce
+  base
+  protein
+  topping
+
+  @@map("product_customization_type_enum")
+  @@schema("orders")
+}
+
+enum orders_product_family_enum {
+  raw_material
+  finished_product
+  addon
+
+  @@map("product_family_enum")
+  @@schema("orders")
+}
+
+enum orders_selection_type_enum {
+  quantity
+  boolean
+
+  @@map("selection_type_enum")
+  @@schema("orders")
 }

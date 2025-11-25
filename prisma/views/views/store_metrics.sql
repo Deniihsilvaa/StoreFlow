@@ -11,7 +11,7 @@ SELECT
   ) AS orders_last_30_days,
   count(DISTINCT o.id) FILTER (
     WHERE
-      (o.status = 'delivered' :: orders.order_status_enum)
+      (o.status = 'delivered' :: order_status_enum)
   ) AS delivered_orders,
   count(DISTINCT o.customer_id) AS unique_customers,
   COALESCE(avg(o.total_amount), (0) :: numeric) AS average_order_value,
@@ -32,7 +32,7 @@ FROM
   (
     (
       public.stores s
-      LEFT JOIN orders.orders o ON (
+      LEFT JOIN orders o ON (
         (
           (o.store_id = s.id)
           AND (o.deleted_at IS NULL)

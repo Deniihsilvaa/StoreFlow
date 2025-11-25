@@ -36,8 +36,8 @@ FROM
   (
     (
       (
-        orders.order_items oi
-        JOIN orders.orders o ON (
+        order_items oi
+        JOIN orders o ON (
           (
             (o.id = oi.order_id)
             AND (o.deleted_at IS NULL)
@@ -46,7 +46,7 @@ FROM
       )
       LEFT JOIN public.products p ON ((p.id = oi.product_id))
     )
-    LEFT JOIN orders.order_item_customizations oic ON (
+    LEFT JOIN order_item_customizations oic ON (
       (
         (oic.order_item_id = oi.id)
         AND (oic.deleted_at IS NULL)

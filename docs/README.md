@@ -8,6 +8,7 @@ Bem-vindo à documentação completa do backend StoreFlow!
 Documentação completa de todos os endpoints disponíveis:
 
 - [Autenticação](./api/authentication.md) - Login, signup, refresh tokens
+- [Perfil](./api/profile.md) - Gerenciamento de perfil do usuário
 - [Lojas](./api/stores.md) - Gerenciamento de lojas
 - [Produtos](./api/products.md) - Gerenciamento de produtos
 - [Clientes](./api/customers.md) - Gerenciamento de clientes
