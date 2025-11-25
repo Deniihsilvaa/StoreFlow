@@ -10,22 +10,25 @@ export async function GET(
   { params }: { params: Promise<{ storeId: string }> | { storeId: string } },
 ) {
   return withErrorHandling(
-    withMerchant(async (_request: NextRequest, context) => {
+    withMerchant(async (req: NextRequest, context) => {
       // Resolver params se for Promise (Next.js 15+)
       const resolvedParams = params instanceof Promise ? await params : params;
-      const pagination = parsePagination(request);
+      const pagination = parsePagination(req);
 
-      return ApiResponse.success({
-        items: [],
-        storeId: resolvedParams.storeId,
-        pagination: {
-          ...pagination,
-          total: 0,
-          totalPages: 0,
-          hasNext: false,
-          hasPrev: false,
+      return ApiResponse.success(
+        {
+          items: [],
+          storeId: resolvedParams.storeId,
+          pagination: {
+            ...pagination,
+            total: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false,
+          },
         },
-      });
+        { request: req }
+      );
     }),
   )(request, {});
 }

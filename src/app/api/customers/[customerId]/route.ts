@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ customerId: string }> | { customerId: string } },
 ) {
   return withErrorHandling(
-    withAuth(async (_request: NextRequest, context) => {
+    withAuth(async (req: NextRequest, context) => {
       // Resolver params se for Promise (Next.js 15+)
       const resolvedParams = params instanceof Promise ? await params : params;
       
@@ -21,10 +21,13 @@ export async function GET(
         );
       }
 
-      return ApiResponse.success({
-        id: resolvedParams.customerId,
-        requestedBy: context.user.id,
-      });
+      return ApiResponse.success(
+        {
+          id: resolvedParams.customerId,
+          requestedBy: context.user.id,
+        },
+        { request: req }
+      );
     }),
   )(request, {});
 }

@@ -5,6 +5,6 @@ import { merchantLoginController } from "@/modules/auth/controller/merchant-logi
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json();
-  return merchantLoginController(body);
+  return merchantLoginController(body, request);
 });
 

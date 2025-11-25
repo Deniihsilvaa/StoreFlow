@@ -8,13 +8,15 @@ import {
 } from "@/modules/auth/controller/profile.controller";
 
 export const GET = withErrorHandling(
-  withAuth(async (_request, context) => getProfileController(context.user.id)),
+  withAuth(async (request: NextRequest, context) => 
+    getProfileController(context.user.id, request)
+  ),
 );
 
 export const PUT = withErrorHandling(
   withAuth(async (request: NextRequest, context) => {
     const body = await request.json();
-    return updateProfileController(context.user.id, body);
+    return updateProfileController(context.user.id, body, request);
   }),
 );
 

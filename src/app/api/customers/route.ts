@@ -9,17 +9,20 @@ export const GET = withErrorHandling(
   withMerchant(async (request: NextRequest, context) => {
     const pagination = parsePagination(request);
 
-    return ApiResponse.success({
-      items: [],
-      requestedBy: context.user.id,
-      pagination: {
-        ...pagination,
-        total: 0,
-        totalPages: 0,
-        hasNext: false,
-        hasPrev: false,
+    return ApiResponse.success(
+      {
+        items: [],
+        requestedBy: context.user.id,
+        pagination: {
+          ...pagination,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrev: false,
+        },
       },
-    });
+      { request }
+    );
   }),
 );
 
@@ -30,7 +33,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     {
       customer: body,
     },
-    { status: 201 },
+    { request, status: 201 },
   );
 });
 

@@ -5,6 +5,6 @@ import { refreshTokenController } from "@/modules/auth/controller/refresh-token.
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json();
-  return refreshTokenController(body);
+  return refreshTokenController(body, request);
 });
 

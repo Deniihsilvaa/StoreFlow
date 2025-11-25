@@ -5,6 +5,6 @@ import { customerLoginController } from "@/modules/auth/controller/customer-logi
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json();
-  return customerLoginController(body);
+  return customerLoginController(body, request);
 });
 

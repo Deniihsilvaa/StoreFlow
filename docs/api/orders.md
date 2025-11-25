@@ -139,7 +139,7 @@ Authorization: Bearer {token}
 
 ### POST /api/orders
 
-Cria um novo pedido (em desenvolvimento).
+Cria um novo pedido.
 
 #### Headers
 
@@ -189,23 +189,64 @@ Content-Type: application/json
 {
   "success": true,
   "data": {
-    "order": {
-      "store_id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
-      "delivery_option_id": "uuid-da-opcao-entrega",
-      "fulfillment_method": "delivery",
-      "payment_method": "credit_card",
-      "items": [...]
-    },
-    "userId": "uuid-do-usuario-autenticado"
-  }
+    "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+    "store_id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+    "customer_id": "uuid-do-cliente",
+    "delivery_option_id": "uuid-da-opcao-entrega",
+    "fulfillment_method": "delivery",
+    "pickup_slot": null,
+    "total_amount": 89.90,
+    "delivery_fee": 10.00,
+    "status": "pending",
+    "payment_method": "credit_card",
+    "payment_status": "pending",
+    "estimated_delivery_time": null,
+    "observations": "Entregar na portaria",
+    "cancellation_reason": null,
+    "deleted_at": null,
+    "created_at": "2025-11-19T10:00:00Z",
+    "updated_at": "2025-11-19T10:00:00Z",
+    "store_name": "Kampai Sushi",
+    "store_slug": "kampai-sushi",
+    "customer_name": "João Silva",
+    "customer_phone": "11999999999",
+    "delivery_street": "Rua Exemplo",
+    "delivery_number": "123",
+    "delivery_neighborhood": "Bairro",
+    "delivery_city": "São Paulo",
+    "delivery_state": "SP",
+    "delivery_zip_code": "01234-567",
+    "delivery_option_name": "Entrega Padrão",
+    "delivery_option_fee": 10.00,
+    "items_count": 3,
+    "total_items": 5,
+    "status_history": {
+      "pending": "2025-11-19T10:00:00Z"
+    }
+  },
+  "timestamp": "2025-11-19T10:00:00Z"
 }
 ```
 
 #### Tratamento de Erros
 
 - **401**: Não autenticado ou token inválido
-- **400**: Dados inválidos ou loja não encontrada
-- **422**: Validação de dados falhou
+- **403**: Apenas clientes podem criar pedidos
+- **400**: Dados inválidos, loja não encontrada ou não ativa
+- **404**: Cliente não encontrado
+- **422**: Validação de dados falhou (Zod validation)
+
+#### Erros Comuns
+
+- `"Loja não encontrada"` - A loja especificada não existe ou foi deletada
+- `"Loja não está ativa"` - A loja existe mas não está ativa
+- `"Loja não aceita entregas"` - A loja não tem delivery habilitado
+- `"Loja não aceita retiradas"` - A loja não tem pickup habilitado
+- `"Loja não aceita pagamento via {método}"` - O método de pagamento não é aceito pela loja
+- `"Um ou mais produtos não foram encontrados"` - Produto(s) não existem ou foram deletados
+- `"Produto não pertence à loja especificada"` - Produto não pertence à loja do pedido
+- `"Um ou mais produtos não estão ativos"` - Produto(s) existem mas não estão ativos
+- `"Valor mínimo do pedido é R$ X.XX"` - O subtotal não atinge o valor mínimo da loja
 
 #### Status de Desenvolvimento
 
@@ -470,13 +511,27 @@ A view `order_items_complete` fornece dados enriquecidos dos itens do pedido:
   - Dados enriquecidos da view `orders_detailed`
   - Suporte para clientes e merchants
 
+- **POST /api/orders** - Criação de Pedido
+  - ✅ Validação completa de dados (Zod)
+  - ✅ Validação de loja (existência, status, métodos aceitos)
+  - ✅ Validação de produtos (existência, loja, status)
+  - ✅ Cálculo automático de totais
+  - ✅ Cálculo de taxa de entrega
+  - ✅ Aplicação de entrega grátis
+  - ✅ Validação de valor mínimo
+  - ✅ Criação no banco de dados (transação)
+  - ✅ Criação de itens e customizações
+  - ✅ Criação de endereço de entrega
+  - ✅ Retorno de dados enriquecidos
+
 ### 🚧 Em Desenvolvimento
 
-1. **POST /api/orders** - Criação de Pedido
-   - Validação de dados
-   - Cálculo de totais
-   - Criação no banco de dados
-   - Notificações
+1. **POST /api/orders** - Melhorias futuras
+   - Verificação de estoque
+   - Aplicação de descontos e promoções
+   - Notificações para a loja
+   - Integração com sistema de pagamento
+   - Cálculo de tempo de preparo estimado
 
 2. **GET /api/orders/[orderId]** - Detalhes do Pedido
    - Dados completos da view

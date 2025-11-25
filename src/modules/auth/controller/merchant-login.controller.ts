@@ -1,10 +1,12 @@
+import type { NextRequest } from "next/server";
+
 import { ApiResponse } from "@/core/responses/ApiResponse";
 import { merchantLoginSchema } from "@/modules/auth/dto/merchant-login.dto";
 import { authService } from "@/modules/auth/service/auth.service";
 
-export async function merchantLoginController(body: unknown) {
+export async function merchantLoginController(body: unknown, request?: NextRequest) {
   const payload = merchantLoginSchema.parse(body);
   const result = await authService.loginMerchant(payload);
-  return ApiResponse.success(result);
+  return ApiResponse.success(result, { request });
 }
 

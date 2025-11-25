@@ -5,6 +5,6 @@ import { customerSignUpController } from "@/modules/auth/controller/costumer-sin
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json();
-  return customerSignUpController(body);
+  return customerSignUpController(body, request);
 });
 

@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server'
 const ALLOWED_ORIGINS = [
   'http://localhost:4000',
   'http://localhost:3000',
+  'http://localhost:5173',
   // Domínios da Vercel (produção e preview)
   'https://store-flow-one.vercel.app',
   'https://store-flow-git-main-denilson-silvas-projects-63b429e7.vercel.app',
@@ -74,10 +75,22 @@ export async function middleware(
   try {
     const startTime = Date.now()
     const origin = request.headers.get('origin') || ''
+    const referer = request.headers.get('referer') || ''
     const pathname = request.nextUrl.pathname
 
-    // Log da requisição recebida
+    // Log da requisição recebida com informações de debug
     logRequest(request)
+    
+    // Debug: Log adicional para CORS em desenvolvimento
+    if (process.env.NODE_ENV === 'development' && pathname.startsWith('/api/')) {
+      console.log('[CORS DEBUG]', {
+        method: request.method,
+        path: pathname,
+        origin: origin || '(no origin)',
+        referer: referer || '(no referer)',
+        userAgent: request.headers.get('user-agent')?.substring(0, 50),
+      })
+    }
 
     // Se não for uma rota /api, passa adiante
     if (!pathname.startsWith('/api/')) {
@@ -86,27 +99,31 @@ export async function middleware(
 
     // Verifica se a origem é permitida
     const originAllowed = isOriginAllowed(origin)
-    
-    // Determina qual origem usar nos headers CORS
-    // IMPORTANTE: Sempre adiciona headers CORS se houver origin (cross-origin request)
-    // Se não houver origin, pode ser same-origin ou requisição direta (não precisa CORS)
-    const corsOrigin = origin && originAllowed ? origin : (origin || null)
 
     // Se for preflight (OPTIONS), devolve um 204 com os headers CORS
     if (request.method === 'OPTIONS') {
       const res = new NextResponse(null, { status: 204 })
       
       // Para preflight, SEMPRE responde com headers CORS válidos
-      if (corsOrigin) {
-        res.headers.set('Access-Control-Allow-Origin', corsOrigin)
-        res.headers.set('Access-Control-Allow-Credentials', 'true')
-      } else if (origin) {
-        // Se há origin mas não é permitida, ainda responde ao preflight
-        // O navegador vai bloquear a requisição real depois, mas precisa de resposta ao preflight
+      // CRÍTICO: O navegador precisa receber os headers CORS na resposta OPTIONS
+      // mesmo que não haja origin (pode ser same-origin ou requisição direta)
+      if (origin) {
+        // Se há origin, sempre adiciona o header (mesmo se não estiver na lista)
+        // O navegador vai validar depois, mas precisa receber uma resposta válida
         res.headers.set('Access-Control-Allow-Origin', origin)
+        
+        // Só adiciona credentials se a origem for permitida
+        if (originAllowed) {
+          res.headers.set('Access-Control-Allow-Credentials', 'true')
+        }
+      } else {
+        // Se não há origin, pode ser same-origin ou requisição direta
+        // Nesse caso, não precisa de CORS, mas adicionamos '*' como fallback seguro
+        // para garantir que o navegador não bloqueie
+        res.headers.set('Access-Control-Allow-Origin', '*')
       }
-      // Se não há origin (same-origin), não precisa de CORS headers
       
+      // Headers obrigatórios para preflight
       res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
       res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
       res.headers.set('Access-Control-Max-Age', '86400')
@@ -149,9 +166,8 @@ export async function middleware(
   } catch (error) {
     // Em caso de erro no middleware, retorna uma resposta de erro com CORS
     console.error('[MIDDLEWARE ERROR]', error)
-    const origin = request.headers.get('origin') || ''
-    const originAllowed = isOriginAllowed(origin)
-    const corsOrigin = origin && originAllowed ? origin : null
+    const errorOrigin = request.headers.get('origin') || ''
+    const errorOriginAllowed = isOriginAllowed(errorOrigin)
     
     const errorResponse = new NextResponse(
       JSON.stringify({
@@ -170,9 +186,12 @@ export async function middleware(
       }
     )
     
-    if (corsOrigin) {
-      errorResponse.headers.set('Access-Control-Allow-Origin', corsOrigin)
-      errorResponse.headers.set('Access-Control-Allow-Credentials', 'true')
+    // Adiciona headers CORS mesmo em caso de erro
+    if (errorOrigin) {
+      errorResponse.headers.set('Access-Control-Allow-Origin', errorOrigin)
+      if (errorOriginAllowed) {
+        errorResponse.headers.set('Access-Control-Allow-Credentials', 'true')
+      }
     }
     
     return addSecurityHeaders(errorResponse)

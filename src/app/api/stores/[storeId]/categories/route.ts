@@ -7,13 +7,16 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ storeId: string }> | { storeId: string } },
 ) {
-  return withErrorHandling(async () => {
+  return withErrorHandling(async (req: NextRequest) => {
     // Resolver params se for Promise (Next.js 15+)
     const resolvedParams = params instanceof Promise ? await params : params;
-    return ApiResponse.success({
-      storeId: resolvedParams.storeId,
-      categories: [],
-    });
+    return ApiResponse.success(
+      {
+        storeId: resolvedParams.storeId,
+        categories: [],
+      },
+      { request: req }
+    );
   })(request, {});
 }
 
