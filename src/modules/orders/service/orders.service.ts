@@ -37,6 +37,26 @@ export type OrderDetailed = {
   status_history: unknown | null;
 };
 
+export type OrderItemComplete = {
+  id: string | null;
+  order_id: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  product_family: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  unit_cost_price: number | null;
+  total_price: number | null;
+  observations: string | null;
+  deleted_at: Date | null;
+  created_at: Date | null;
+  store_id: string | null;
+  order_status: string | null;
+  product_family_original: string | null;
+  product_image_url: string | null;
+  customizations: unknown | null;
+};
+
 export type OrdersListParams = {
   customerId?: string;
   storeId?: string;
@@ -78,7 +98,7 @@ export class OrdersService {
     // Filtro por status
     // IMPORTANTE: status é um ENUM e precisa de cast explícito na comparação
     if (params.status) {
-      conditions.push(`status = $${paramIndex}::orders_order_status_enum`);
+      conditions.push(`status = $${paramIndex}::"orders"."order_status_enum"`);
       values.push(params.status);
       paramIndex++;
     }
@@ -182,6 +202,88 @@ export class OrdersService {
     }));
 
     return { items: transformedOrders, total };
+  }
+
+  async getOrderById(
+    orderId: string,
+    userId: string,
+  ): Promise<{
+    order: OrderDetailed;
+    items: OrderItemComplete[];
+  }> {
+    // Buscar pedido da view orders_detailed
+    const orderQuery = `
+      SELECT 
+        id, store_id, customer_id, delivery_option_id, fulfillment_method,
+        pickup_slot, total_amount, delivery_fee, status, payment_method,
+        payment_status, estimated_delivery_time, observations, cancellation_reason,
+        deleted_at, created_at, updated_at, store_name, store_slug,
+        customer_name, customer_phone, delivery_street, delivery_number,
+        delivery_neighborhood, delivery_city, delivery_state, delivery_zip_code,
+        delivery_option_name, delivery_option_fee, items_count, total_items, status_history
+      FROM views.orders_detailed
+      WHERE id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const orderResult = await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderDetailed[]>;
+    }).$queryRawUnsafe(orderQuery, orderId);
+
+    if (!orderResult || orderResult.length === 0) {
+      throw new Error("PEDIDO_NAO_ENCONTRADO");
+    }
+
+    const order = orderResult[0];
+
+    // Verificar se o usuário tem permissão (é o cliente do pedido)
+    // Buscar customer pelo auth_user_id
+    const customerQuery = `
+      SELECT id FROM public.customers WHERE auth_user_id = $1::uuid AND deleted_at IS NULL
+    `;
+    const customerResult = await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{ id: string }>>;
+    }).$queryRawUnsafe(customerQuery, userId);
+
+    if (customerResult.length > 0) {
+      const customerId = customerResult[0].id;
+      if (order.customer_id !== customerId) {
+        throw new Error("SEM_PERMISSAO");
+      }
+    }
+
+    // Buscar itens do pedido da view order_items_complete
+    const itemsQuery = `
+      SELECT 
+        id, order_id, product_id, product_name, product_family,
+        quantity, unit_price, unit_cost_price, total_price, observations,
+        deleted_at, created_at, store_id, order_status, 
+        product_family_original, product_image_url, customizations
+      FROM views.order_items_complete
+      WHERE order_id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const itemsResult = await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderItemComplete[]>;
+    }).$queryRawUnsafe(itemsQuery, orderId);
+
+    // Transformar os dados
+    const transformedOrder: OrderDetailed = {
+      ...order,
+      total_amount: order.total_amount ? Number(order.total_amount) : null,
+      delivery_fee: order.delivery_fee ? Number(order.delivery_fee) : null,
+      delivery_option_fee: order.delivery_option_fee ? Number(order.delivery_option_fee) : null,
+      items_count: order.items_count ? Number(order.items_count) : null,
+      total_items: order.total_items ? Number(order.total_items) : null,
+    };
+
+    const transformedItems: OrderItemComplete[] = (itemsResult || []).map((item) => ({
+      ...item,
+      unit_price: item.unit_price ? Number(item.unit_price) : null,
+      unit_cost_price: item.unit_cost_price ? Number(item.unit_cost_price) : null,
+      total_price: item.total_price ? Number(item.total_price) : null,
+    }));
+
+    return { order: transformedOrder, items: transformedItems };
   }
 
   async createOrder(
@@ -419,9 +521,9 @@ export class OrdersService {
           payment_status, observations, created_at, updated_at
         )
         VALUES (
-          $1::uuid, $2::uuid, $3::uuid, $4::orders_fulfillment_method_enum,
-          $5::timestamptz, $6::decimal, $7::decimal, 'pending'::orders_order_status_enum, $8::orders_payment_method_enum,
-          'pending'::orders_payment_status_enum, $9::text, NOW(), NOW()
+          $1::uuid, $2::uuid, $3::uuid, $4::"orders"."fulfillment_method_enum",
+          $5::timestamptz, $6::decimal, $7::decimal, 'pending'::"orders"."order_status_enum", $8::"orders"."payment_method_enum",
+          'pending'::"orders"."payment_status_enum", $9::text, NOW(), NOW()
         )
         RETURNING id
       `;
@@ -471,7 +573,7 @@ export class OrdersService {
             unit_price, total_price, observations, created_at
           )
           VALUES (
-            $1::uuid, $2::uuid, $3::text, $4::orders_product_family_enum, $5::int, 
+            $1::uuid, $2::uuid, $3::text, $4::"orders"."product_family_enum", $5::int, 
             $6::decimal, $7::decimal, $8::text, NOW()
           )
           RETURNING id
@@ -526,8 +628,8 @@ export class OrdersService {
                 selection_type, quantity, unit_price, total_price, created_at
               )
               VALUES (
-                $1::uuid, $2::uuid, $3::text, $4::orders_product_customization_type_enum, 
-                $5::orders_selection_type_enum, $6::int, $7::decimal, $8::decimal, NOW()
+                $1::uuid, $2::uuid, $3::text, $4::"orders"."product_customization_type_enum", 
+                $5::"orders"."selection_type_enum", $6::int, $7::decimal, $8::decimal, NOW()
               )
             `;
 

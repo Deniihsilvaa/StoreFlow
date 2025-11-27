@@ -19,7 +19,7 @@ const routes: RouteConfig[] = [
     description: "Login de cliente",
   },
   {
-    path: "src/app/api/auth/customer/singup/route.ts",
+    path: "src/app/api/auth/customer/signup/route.ts",
     methods: ["POST"],
     description: "Cadastro de cliente",
   },

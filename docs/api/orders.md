@@ -277,7 +277,7 @@ Funcionalidades planejadas para o futuro:
 
 ### GET /api/orders/[orderId]
 
-Retorna os detalhes de um pedido específico (em desenvolvimento).
+Retorna os detalhes completos de um pedido específico, incluindo itens e customizações.
 
 #### Parâmetros de URL
 
@@ -302,31 +302,98 @@ Authorization: Bearer {token}
 {
   "success": true,
   "data": {
-    "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
-    "userId": "uuid-do-usuario-autenticado"
-  }
+    "order": {
+      "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+      "storeId": "45319ec5-7cb8-499b-84b0-896e812dfd2e",
+      "customerId": "19bf8eff-14d9-468b-9a78-8908dcbf19da",
+      "fulfillmentMethod": "delivery",
+      "pickupSlot": null,
+      "totalAmount": 135.80,
+      "deliveryFee": 8.00,
+      "status": "pending",
+      "paymentMethod": "pix",
+      "paymentStatus": "pending",
+      "estimatedDeliveryTime": "2025-11-27T15:30:00.000Z",
+      "observations": "Sem cebola",
+      "cancellationReason": null,
+      "createdAt": "2025-11-27T14:00:00.000Z",
+      "updatedAt": "2025-11-27T14:00:00.000Z",
+      "store": {
+        "name": "Loja Exemplo",
+        "slug": "loja-exemplo"
+      },
+      "customer": {
+        "name": "João Silva",
+        "phone": "11999999999"
+      },
+      "deliveryAddress": {
+        "street": "Rua das Flores",
+        "number": "123",
+        "neighborhood": "Centro",
+        "city": "São Paulo",
+        "state": "SP",
+        "zipCode": "01234567"
+      },
+      "deliveryOption": {
+        "name": "Entrega Padrão",
+        "fee": 8.00
+      },
+      "itemsCount": 2,
+      "totalItems": 3,
+      "statusHistory": [
+        {
+          "status": "pending",
+          "changedAt": "2025-11-27T14:00:00.000Z"
+        }
+      ]
+    },
+    "items": [
+      {
+        "id": "item-uuid-1",
+        "productId": "product-uuid-1",
+        "productName": "Pizza Margherita",
+        "productFamily": "pizza",
+        "productImageUrl": "https://example.com/pizza.jpg",
+        "quantity": 1,
+        "unitPrice": 45.90,
+        "totalPrice": 45.90,
+        "observations": null,
+        "customizations": [
+          {
+            "name": "Borda Recheada",
+            "type": "topping",
+            "quantity": 1,
+            "unitPrice": 5.00,
+            "totalPrice": 5.00
+          }
+        ],
+        "createdAt": "2025-11-27T14:00:00.000Z"
+      },
+      {
+        "id": "item-uuid-2",
+        "productId": "product-uuid-2",
+        "productName": "Refrigerante 2L",
+        "productFamily": "beverage",
+        "productImageUrl": "https://example.com/refri.jpg",
+        "quantity": 2,
+        "unitPrice": 12.00,
+        "totalPrice": 24.00,
+        "observations": null,
+        "customizations": null,
+        "createdAt": "2025-11-27T14:00:00.000Z"
+      }
+    ]
+  },
+  "timestamp": "2025-11-27T14:05:00.000Z"
 }
 ```
 
 #### Tratamento de Erros
 
 - **401**: Não autenticado ou token inválido
-- **404**: Pedido não encontrado ou sem permissão para acessar
+- **403**: Sem permissão para acessar este pedido
+- **404**: Pedido não encontrado
 - **422**: Parâmetro orderId inválido ou ausente
-
-#### Status de Desenvolvimento
-
-⚠️ **Esta funcionalidade está em desenvolvimento**
-
-Atualmente, a rota retorna apenas o ID do pedido. As seguintes funcionalidades estão planejadas:
-
-- Dados completos do pedido da view `orders_detailed`
-- Itens do pedido da view `order_items_complete`
-- Histórico de status do pedido
-- Informações de entrega
-- Dados de pagamento
-- Tempo estimado de entrega atualizado
-- Rastreamento do pedido
 
 ---
 
