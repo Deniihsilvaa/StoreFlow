@@ -76,8 +76,9 @@ export class OrdersService {
     }
 
     // Filtro por status
+    // IMPORTANTE: status é um ENUM e precisa de cast explícito na comparação
     if (params.status) {
-      conditions.push(`status = $${paramIndex}`);
+      conditions.push(`status = $${paramIndex}::orders_order_status_enum`);
       values.push(params.status);
       paramIndex++;
     }
@@ -410,6 +411,7 @@ export class OrdersService {
       }) => Promise<T>) => Promise<T>;
     }).$transaction(async (tx) => {
       // Inserir pedido no schema 'orders'
+      // IMPORTANTE: Todos os ENUMs precisam de cast explícito para o tipo correto
       const insertOrderQuery = `
         INSERT INTO orders.orders (
           store_id, customer_id, delivery_option_id, fulfillment_method,
@@ -417,9 +419,9 @@ export class OrdersService {
           payment_status, observations, created_at, updated_at
         )
         VALUES (
-          $1::uuid, $2::uuid, $3::uuid, $4::text,
-          $5::timestamptz, $6::decimal, $7::decimal, 'pending', $8::text,
-          'pending', $9::text, NOW(), NOW()
+          $1::uuid, $2::uuid, $3::uuid, $4::orders_fulfillment_method_enum,
+          $5::timestamptz, $6::decimal, $7::decimal, 'pending'::orders_order_status_enum, $8::orders_payment_method_enum,
+          'pending'::orders_payment_status_enum, $9::text, NOW(), NOW()
         )
         RETURNING id
       `;
@@ -462,13 +464,14 @@ export class OrdersService {
         const unitPrice = Number(product.price);
         const totalPrice = unitPrice * item.quantity;
 
+        // IMPORTANTE: product_family é um ENUM e precisa de cast explícito
         const insertItemQuery = `
           INSERT INTO orders.order_items (
             order_id, product_id, product_name, product_family, quantity, 
             unit_price, total_price, observations, created_at
           )
           VALUES (
-            $1::uuid, $2::uuid, $3::text, $4::text, $5::int, 
+            $1::uuid, $2::uuid, $3::text, $4::orders_product_family_enum, $5::int, 
             $6::decimal, $7::decimal, $8::text, NOW()
           )
           RETURNING id
@@ -516,13 +519,15 @@ export class OrdersService {
               : (customization.value === true || customization.value === 'true' ? 1 : 0);
             const custTotalPrice = custUnitPrice * custQuantity;
 
+            // IMPORTANTE: customization_type e selection_type são ENUMs e precisam de cast explícito
             const insertCustomizationQuery = `
               INSERT INTO orders.order_item_customizations (
                 order_item_id, customization_id, customization_name, customization_type, 
                 selection_type, quantity, unit_price, total_price, created_at
               )
               VALUES (
-                $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::int, $7::decimal, $8::decimal, NOW()
+                $1::uuid, $2::uuid, $3::text, $4::orders_product_customization_type_enum, 
+                $5::orders_selection_type_enum, $6::int, $7::decimal, $8::decimal, NOW()
               )
             `;
 

@@ -250,18 +250,28 @@ Content-Type: application/json
 
 #### Status de Desenvolvimento
 
-⚠️ **Esta funcionalidade está em desenvolvimento**
+✅ **Esta funcionalidade está implementada e funcional**
 
-Atualmente, a rota apenas retorna os dados enviados sem processamento. As seguintes funcionalidades estão planejadas:
+Funcionalidades implementadas:
 
-- Validação completa dos dados do pedido
-- Cálculo automático de totais
-- Verificação de disponibilidade de produtos
-- Aplicação de descontos e promoções
-- Criação de registro no banco de dados
-- Notificação para a loja
-- Integração com sistema de pagamento
-- Cálculo de tempo de preparo estimado
+- ✅ Validação completa dos dados do pedido (Zod)
+- ✅ Cálculo automático de totais
+- ✅ Verificação de disponibilidade de produtos
+- ✅ Criação de registro no banco de dados (transação)
+- ✅ Criação de itens e customizações
+- ✅ Criação de endereço de entrega
+- ✅ Validação de métodos de pagamento e fulfillment
+- ✅ Cálculo de taxa de entrega
+- ✅ Aplicação de entrega grátis
+- ✅ Validação de valor mínimo
+
+Funcionalidades planejadas para o futuro:
+
+- 🚧 Aplicação de descontos e promoções
+- 🚧 Notificação para a loja
+- 🚧 Integração com sistema de pagamento
+- 🚧 Cálculo de tempo de preparo estimado
+- 🚧 Verificação de estoque em tempo real
 
 ---
 

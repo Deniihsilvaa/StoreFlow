@@ -6,6 +6,7 @@ import { authService } from "@/modules/auth/service/auth.service";
 
 export async function customerSignUpController(body: unknown, request?: NextRequest) {
   const payload = customerSignUpSchema.parse(body);
+  console.log("payload", payload);
   const result = await authService.customerSignUp(payload);
   return ApiResponse.success(result, { request });
 }

@@ -106,6 +106,7 @@ Registra um novo cliente na loja.
 
 - **400**: Email ou telefone já cadastrado
 - **422**: Dados de validação inválidos
+- **500**: Cliente nao tem acesso a loja/falta de cadastrado na loja
 
 ---
 
