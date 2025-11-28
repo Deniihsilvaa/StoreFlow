@@ -717,12 +717,12 @@ cancelled  cancelled  cancelled
 - **GET /api/orders** - Listagem completa com filtros, ordenação e paginação
 - **POST /api/orders** - Criação de pedido
 - **GET /api/orders/[orderId]** - Detalhes do pedido
+- **POST /api/stores/[storeId]/orders/[orderId]/confirm** - Confirmação de pedido (merchant) ✅
+- **POST /api/stores/[storeId]/orders/[orderId]/reject** - Rejeição de pedido (merchant) ✅
+- **PUT /api/stores/[storeId]/orders/[orderId]** - Atualização de status (merchant) ✅
+- **POST /api/orders/[orderId]/confirm-delivery** - Confirmação de recebimento (customer) ✅
 
 ### 🚧 Em Desenvolvimento
 
-- **POST /api/stores/[storeId]/orders/[orderId]/confirm** - Confirmação de pedido (merchant)
-- **POST /api/stores/[storeId]/orders/[orderId]/reject** - Rejeição de pedido (merchant)
-- **PUT /api/stores/[storeId]/orders/[orderId]** - Atualização de status (merchant)
-- **POST /api/orders/[orderId]/confirm-delivery** - Confirmação de recebimento (customer)
 - **Sistema de Timeouts Automáticos** - Jobs para cancelamento automático
 - **Supabase Real-time** - Notificações em tempo real (Postgres Changes, Broadcast, Presence)

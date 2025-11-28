@@ -5,15 +5,16 @@
 Este documento identifica inconsistências entre a **documentação** (`docs/api/orders.md`) e o **código implementado**, além de verificar se todas as **tabelas necessárias** existem no schema do Prisma.
 
 **Data da Análise:** 2025-11-27  
-**Documentação Analisada:** `docs/api/orders.md` (699 linhas)  
+**Última Atualização:** 2025-11-27  
+**Documentação Analisada:** `docs/api/orders.md` (729 linhas)  
 **Schema Analisado:** `prisma/schema.prisma`
 
 ### 📊 Resumo Rápido
 
-- 🔴 **3 endpoints críticos faltando** (confirm, reject, confirm-delivery)
-- 🔴 **1 endpoint incompleto** (PUT /api/orders/[orderId])
-- 🟡 **2 inconsistências de dados** (status `refunded`)
-- 🟡 **1 problema de permissões** (GET não verifica merchants)
+- ✅ **3 endpoints críticos** - **IMPLEMENTADOS** (confirm, reject, confirm-delivery)
+- ✅ **1 endpoint incompleto** - **RESOLVIDO** (PUT /api/stores/[storeId]/orders/[orderId])
+- ✅ **2 inconsistências de dados** - **RESOLVIDAS** (status `refunded` adicionado aos enums)
+- 🟡 **1 problema de permissões** - **PENDENTE** (GET não verifica merchants)
 - ✅ **Todas as tabelas existem** no schema Prisma
 - ✅ **Views SQL existem** no projeto (verificar se aplicadas no Supabase)
 
@@ -46,22 +47,21 @@ Este documento identifica inconsistências entre a **documentação** (`docs/api
 
 ---
 
-### 2. Endpoint Implementado mas Incompleto
+### 2. ✅ Endpoint Implementado mas Incompleto - RESOLVIDO
 
-#### ⚠️ PUT /api/orders/[orderId]
-- **Status na Documentação:** 🚧 Em Desenvolvimento
-- **Status no Código:** ⚠️ **EXISTE MAS NÃO PROCESSA**
-- **Localização:** `src/app/api/orders/[orderId]/route.ts` (linhas 114-141)
-- **Problema:** A rota apenas retorna o body recebido sem processar:
-  ```typescript
-  return ApiResponse.success({
-    id: resolvedParams.orderId,
-    payload: body,  // ❌ Apenas retorna o body, não processa
-    updatedBy: context.user.id,
-  });
-  ```
-- **Impacto:** Alto - Não atualiza status do pedido
-- **Ação Necessária:** Implementar lógica de atualização de status com validações
+#### ✅ PUT /api/stores/[storeId]/orders/[orderId]
+- **Status na Documentação:** ✅ Implementado
+- **Status no Código:** ✅ **IMPLEMENTADO E FUNCIONAL**
+- **Localização:** `src/app/api/stores/[storeId]/orders/[orderId]/route.ts`
+- **Solução Aplicada:** 
+  - ✅ Rota movida para `/api/stores/[storeId]/orders/[orderId]` (seguindo padrão de separação merchants/customers)
+  - ✅ Implementada lógica completa de atualização de status
+  - ✅ Validação de transições de status permitidas
+  - ✅ Verificação de permissões (apenas merchant dono da loja)
+  - ✅ Registro no histórico de status
+  - ✅ Suporte a `preparing`, `ready`, `out_for_delivery`, `delivered`
+- **Impacto:** ✅ Resolvido - Status do pedido é atualizado corretamente
+- **Data de Resolução:** 2025-11-27
 
 ---
 
@@ -174,51 +174,53 @@ Este documento identifica inconsistências entre a **documentação** (`docs/api
 
 | Item | Tipo | Severidade | Status |
 |------|------|------------|--------|
-| POST /api/orders/[orderId]/confirm | Endpoint faltando | 🔴 Crítica | ❌ Não existe |
-| POST /api/orders/[orderId]/reject | Endpoint faltando | 🔴 Crítica | ❌ Não existe |
-| POST /api/orders/[orderId]/confirm-delivery | Endpoint faltando | 🟡 Média | ❌ Não existe |
-| PUT /api/orders/[orderId] | Implementação incompleta | 🔴 Crítica | ⚠️ Existe mas não processa |
+| POST /api/stores/[storeId]/orders/[orderId]/confirm | Endpoint faltando | 🔴 Crítica | ✅ **IMPLEMENTADO** |
+| POST /api/stores/[storeId]/orders/[orderId]/reject | Endpoint faltando | 🔴 Crítica | ✅ **IMPLEMENTADO** |
+| POST /api/orders/[orderId]/confirm-delivery | Endpoint faltando | 🟡 Média | ✅ **IMPLEMENTADO** |
+| PUT /api/stores/[storeId]/orders/[orderId] | Implementação incompleta | 🔴 Crítica | ✅ **RESOLVIDO** |
 | GET /api/orders/[orderId] | Permissões incompletas | 🟡 Média | ⚠️ Não verifica merchants |
-| Status `refunded` em order_status | Enum faltando | 🟡 Média | ⚠️ Documentado mas não existe |
-| Status `refunded` em payment_status | Enum faltando | 🟡 Média | ⚠️ Documentado mas não existe |
+| Status `refunded` em order_status | Enum faltando | 🟡 Média | ✅ Adicionado ao enum |
+| Status `refunded` em payment_status | Enum faltando | 🟡 Média | ✅ Adicionado ao enum |
 
 ---
 
 ## 🔧 AÇÕES NECESSÁRIAS
 
-### Prioridade ALTA 🔴
+### Prioridade ALTA 🔴 - ✅ RESOLVIDO
 
-1. **Implementar POST /api/orders/[orderId]/confirm**
-   - Criar rota: `src/app/api/orders/[orderId]/confirm/route.ts`
-   - Implementar lógica no service
-   - Validar permissões (apenas merchant dono da loja)
-   - Atualizar status para `confirmed`
-   - Registrar no histórico
-   - Integrar com Supabase Real-time (notificação)
+1. ✅ **Implementar POST /api/stores/[storeId]/orders/[orderId]/confirm** - **CONCLUÍDO**
+   - ✅ Rota criada: `src/app/api/stores/[storeId]/orders/[orderId]/confirm/route.ts`
+   - ✅ Lógica implementada no service (`confirmOrder`)
+   - ✅ Validação de permissões (apenas merchant dono da loja)
+   - ✅ Atualização de status para `confirmed`
+   - ✅ Registro no histórico
+   - ⏳ Integrar com Supabase Real-time (notificação) - Pendente
 
-2. **Implementar POST /api/orders/[orderId]/reject**
-   - Criar rota: `src/app/api/orders/[orderId]/reject/route.ts`
-   - Implementar lógica no service
-   - Validar permissões (apenas merchant dono da loja)
-   - Atualizar status para `cancelled`
-   - Definir `cancellation_reason`
-   - Registrar no histórico
-   - Integrar com Supabase Real-time (notificação)
+2. ✅ **Implementar POST /api/stores/[storeId]/orders/[orderId]/reject** - **CONCLUÍDO**
+   - ✅ Rota criada: `src/app/api/stores/[storeId]/orders/[orderId]/reject/route.ts`
+   - ✅ Lógica implementada no service (`rejectOrder`)
+   - ✅ Validação de permissões (apenas merchant dono da loja)
+   - ✅ Atualização de status para `cancelled`
+   - ✅ Definição de `cancellation_reason` (obrigatório)
+   - ✅ Registro no histórico
+   - ⏳ Integrar com Supabase Real-time (notificação) - Pendente
 
-3. **Completar PUT /api/orders/[orderId]**
-   - Implementar lógica de atualização de status
-   - Validar transições de status permitidas
-   - Registrar no histórico
-   - Integrar com Supabase Real-time (notificação)
+3. ✅ **Completar PUT /api/stores/[storeId]/orders/[orderId]** - **CONCLUÍDO**
+   - ✅ Rota movida e implementada: `src/app/api/stores/[storeId]/orders/[orderId]/route.ts`
+   - ✅ Lógica de atualização de status implementada (`updateOrderStatus`)
+   - ✅ Validação de transições de status permitidas
+   - ✅ Registro no histórico
+   - ⏳ Integrar com Supabase Real-time (notificação) - Pendente
 
-### Prioridade MÉDIA 🟡
+### Prioridade MÉDIA 🟡 - ✅ RESOLVIDO
 
-4. **Implementar POST /api/orders/[orderId]/confirm-delivery**
-   - Criar rota: `src/app/api/orders/[orderId]/confirm-delivery/route.ts`
-   - Implementar lógica no service
-   - Validar permissões (apenas cliente dono do pedido)
-   - Atualizar status para `delivered`
-   - Registrar no histórico
+4. ✅ **Implementar POST /api/orders/[orderId]/confirm-delivery** - **CONCLUÍDO**
+   - ✅ Rota criada: `src/app/api/orders/[orderId]/confirm-delivery/route.ts`
+   - ✅ Lógica implementada no service (`confirmDelivery`)
+   - ✅ Validação de permissões (apenas cliente dono do pedido)
+   - ✅ Atualização de status para `delivered`
+   - ✅ Registro no histórico
+   - ✅ Suporte a avaliação e feedback opcionais
 
 5. **Corrigir Permissões no GET /api/orders/[orderId]**
    - Adicionar verificação de permissão para merchants
@@ -293,15 +295,48 @@ Todas as tabelas necessárias **existem no schema Prisma** e devem estar criadas
 
 ## 📌 PRÓXIMOS PASSOS
 
-1. ✅ **Aprovar esta análise**
-2. 🔄 **Decidir sobre status `refunded`** (adicionar ou remover da doc)
-3. 🔄 **Implementar endpoints faltantes** (confirm, reject, confirm-delivery)
-4. 🔄 **Completar PUT /api/orders/[orderId]**
-5. 🔄 **Verificar views no Supabase** (se necessário, aplicar SQL)
+1. ✅ **Aprovar esta análise** - **CONCLUÍDO**
+2. ✅ **Decidir sobre status `refunded`** - **RESOLVIDO** (adicionado aos enums)
+3. ✅ **Implementar endpoints faltantes** - **CONCLUÍDO**
+   - ✅ POST /api/stores/[storeId]/orders/[orderId]/confirm
+   - ✅ POST /api/stores/[storeId]/orders/[orderId]/reject
+   - ✅ POST /api/orders/[orderId]/confirm-delivery
+4. ✅ **Completar PUT /api/stores/[storeId]/orders/[orderId]** - **CONCLUÍDO**
+5. 🔄 **Corrigir permissões no GET /api/orders/[orderId]** - **PENDENTE**
+   - Adicionar verificação de permissão para merchants
+6. 🔄 **Verificar views no Supabase** (se necessário, aplicar SQL) - **PENDENTE**
+7. ⏳ **Implementar Supabase Real-time** - **PENDENTE**
+   - Configurar subscriptions para notificações em tempo real
 
 ---
 
-**Data da Análise:** 2025-11-27
-**Versão da Documentação Analisada:** `docs/api/orders.md` (699 linhas)
+**Data da Análise:** 2025-11-27  
+**Última Atualização:** 2025-11-27  
+**Versão da Documentação Analisada:** `docs/api/orders.md` (729 linhas)  
 **Versão do Schema Analisado:** `prisma/schema.prisma`
+
+---
+
+## 📝 Histórico de Resoluções
+
+### 2025-11-27 - Resolução da Inconsistência PUT /api/orders/[orderId]
+
+**Problema Identificado:**
+- PUT /api/orders/[orderId] existia mas não processava atualizações de status
+
+**Solução Aplicada:**
+- ✅ Rota movida para `/api/stores/[storeId]/orders/[orderId]` seguindo padrão de separação merchants/customers
+- ✅ Implementada lógica completa de atualização de status no service (`updateOrderStatus`)
+- ✅ Validação de transições de status permitidas
+- ✅ Verificação de permissões (apenas merchant dono da loja)
+- ✅ Registro no histórico de status
+- ✅ Documentação atualizada
+
+**Arquivos Modificados:**
+- `src/app/api/stores/[storeId]/orders/[orderId]/route.ts` - Rota implementada
+- `src/modules/orders/service/orders.service.ts` - Método `updateOrderStatus` implementado
+- `src/modules/orders/controller/orders.controller.ts` - Controller `updateOrderStatus` implementado
+- `src/modules/orders/schemas/update-order-status.schema.ts` - Schema de validação criado
+- `docs/api/orders.md` - Documentação atualizada
+- `docs/ANALISE_INCONSISTENCIAS_ORDERS.md` - Análise atualizada
 
