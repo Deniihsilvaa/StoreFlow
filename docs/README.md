@@ -13,12 +13,18 @@ Documentação completa de todos os endpoints disponíveis:
 - [Produtos](./api/products.md) - Gerenciamento de produtos
 - [Clientes](./api/customers.md) - Gerenciamento de clientes
 - [Pedidos](./api/orders.md) - Gerenciamento de pedidos
+- [Storage](./api/storage.md) - Upload de imagens (stores, products, orders)
 
 ### [Guias](./guides/)
 Guias práticos para desenvolvimento:
 
 - [Início Rápido](./guides/getting-started.md) - Configuração inicial
 - [Middlewares](./guides/middlewares.md) - Uso de middlewares
+
+### [Storage](./storage/)
+Sistema de armazenamento de imagens:
+
+- [Sistema de Storage](./storage/README.md) - Visão geral e guia completo
 
 ## 🚀 Início Rápido
 

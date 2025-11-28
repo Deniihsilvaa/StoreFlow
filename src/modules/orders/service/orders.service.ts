@@ -486,34 +486,54 @@ export class OrdersService {
 
     const totalAmount = subtotal + deliveryFee;
 
-    // Verificar se a tabela orders existe no schema 'orders'
-    const checkTableQuery = `
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'orders' 
-        AND table_name = 'orders'
-      ) as table_exists
+    // Buscar informações de produtos e customizações ANTES da transação (batch)
+    const productInfoQuery = `
+      SELECT id, name, family
+      FROM public.products
+      WHERE id IN (${productIds.map((_, i) => `$${i + 1}::uuid`).join(',')})
     `;
+    const productInfoResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{
+        id: string; name: string; family: string;
+      }>>;
+    }).$queryRawUnsafe(productInfoQuery, ...productIds)) as Array<{
+      id: string; name: string; family: string;
+    }>;
 
-    const tableCheck = (await (prisma as unknown as {
-      $queryRawUnsafe: (query: string) => Promise<Array<{ table_exists: boolean }>>;
-    }).$queryRawUnsafe(checkTableQuery)) as Array<{ table_exists: boolean }>;
-
-    if (!tableCheck[0]?.table_exists) {
-      throw new Error(
-        "Tabela 'orders.orders' não encontrada no banco de dados. " +
-        "Por favor, verifique se a tabela existe ou se o schema do Prisma está atualizado."
-      );
+    // Coletar IDs de customizações para buscar em batch
+    const customizationIds: string[] = [];
+    for (const item of input.items) {
+      if (item.customizations) {
+        for (const c of item.customizations) {
+          if (!customizationIds.includes(c.customizationId)) {
+            customizationIds.push(c.customizationId);
+          }
+        }
+      }
     }
 
-    // Criar pedido usando transação
+    let customizationsInfo: Array<{
+      id: string; name: string; customization_type: string; selection_type: string; price: number;
+    }> = [];
+
+    if (customizationIds.length > 0) {
+      const custQuery = `
+        SELECT id, name, customization_type, selection_type, price
+        FROM public.product_customizations
+        WHERE id IN (${customizationIds.map((_, i) => `$${i + 1}::uuid`).join(',')})
+      `;
+      customizationsInfo = (await (prisma as unknown as {
+        $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<typeof customizationsInfo>;
+      }).$queryRawUnsafe(custQuery, ...customizationIds)) as typeof customizationsInfo;
+    }
+
+    // Criar pedido usando transação com timeout maior
     const orderId = await (prisma as unknown as {
       $transaction: <T>(callback: (tx: {
         $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
-      }) => Promise<T>) => Promise<T>;
+      }) => Promise<T>, options?: { timeout: number }) => Promise<T>;
     }).$transaction(async (tx) => {
-      // Inserir pedido no schema 'orders'
-      // IMPORTANTE: Todos os ENUMs precisam de cast explícito para o tipo correto
+      // Inserir pedido
       const insertOrderQuery = `
         INSERT INTO orders.orders (
           store_id, customer_id, delivery_option_id, fulfillment_method,
@@ -546,27 +566,12 @@ export class OrdersService {
       // Inserir itens do pedido
       for (const item of input.items) {
         const product = productsResult.find((p) => p.id === item.productId);
-        if (!product) continue;
+        const productInfo = productInfoResult.find((p) => p.id === item.productId);
+        if (!product || !productInfo) continue;
 
-        // Buscar informações completas do produto para order_items
-        const productInfoQuery = `
-          SELECT name, family
-          FROM public.products
-          WHERE id = $1::uuid
-        `;
-        const productInfo = (await tx.$queryRawUnsafe(
-          productInfoQuery,
-          item.productId,
-        )) as Array<{ name: string; family: string }>;
-
-        if (productInfo.length === 0) continue;
-
-        const productName = productInfo[0].name;
-        const productFamily = productInfo[0].family;
         const unitPrice = Number(product.price);
         const totalPrice = unitPrice * item.quantity;
 
-        // IMPORTANTE: product_family é um ENUM e precisa de cast explícito
         const insertItemQuery = `
           INSERT INTO orders.order_items (
             order_id, product_id, product_name, product_family, quantity, 
@@ -583,8 +588,8 @@ export class OrdersService {
           insertItemQuery,
           newOrderId,
           item.productId,
-          productName,
-          productFamily,
+          productInfo.name,
+          productInfo.family,
           item.quantity,
           unitPrice.toFixed(2),
           totalPrice.toFixed(2),
@@ -593,35 +598,18 @@ export class OrdersService {
 
         const itemId = itemResult[0].id;
 
-        // Inserir customizações do item
+        // Inserir customizações
         if (item.customizations && item.customizations.length > 0) {
           for (const customization of item.customizations) {
-            // Buscar informações da customização do produto
-            const customizationInfoQuery = `
-              SELECT name, customization_type, selection_type, price
-              FROM public.product_customizations
-              WHERE id = $1::uuid
-            `;
-            const customizationInfo = (await tx.$queryRawUnsafe(
-              customizationInfoQuery,
-              customization.customizationId,
-            )) as Array<{
-              name: string;
-              customization_type: string;
-              selection_type: string;
-              price: number;
-            }>;
+            const custInfo = customizationsInfo.find((c) => c.id === customization.customizationId);
+            if (!custInfo) continue;
 
-            if (customizationInfo.length === 0) continue;
-
-            const custInfo = customizationInfo[0];
             const custUnitPrice = Number(custInfo.price);
             const custQuantity = typeof customization.value === 'number' 
               ? customization.value 
               : (customization.value === true || customization.value === 'true' ? 1 : 0);
             const custTotalPrice = custUnitPrice * custQuantity;
 
-            // IMPORTANTE: customization_type e selection_type são ENUMs e precisam de cast explícito
             const insertCustomizationQuery = `
               INSERT INTO orders.order_item_customizations (
                 order_item_id, customization_id, customization_name, customization_type, 
@@ -648,7 +636,7 @@ export class OrdersService {
         }
       }
 
-      // Se for delivery, inserir endereço de entrega
+      // Inserir endereço de entrega se necessário
       if (input.fulfillmentMethod === "delivery" && input.deliveryAddress) {
         const insertAddressQuery = `
           INSERT INTO orders.order_delivery_addresses (
@@ -673,7 +661,7 @@ export class OrdersService {
       }
 
       return newOrderId;
-    });
+    }, { timeout: 15000 });
 
     // Buscar pedido criado da view orders_detailed
     const orderQuery = `
