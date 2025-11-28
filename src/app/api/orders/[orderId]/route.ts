@@ -111,31 +111,5 @@ export async function GET(
   )(request, {});
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ orderId: string }> | { orderId: string } },
-) {
-  return withErrorHandling(
-    withAuth(async (req: NextRequest, context) => {
-      const resolvedParams = params instanceof Promise ? await params : params;
-      
-      if (!resolvedParams.orderId) {
-        throw ApiError.validation(
-          { orderId: ["Parâmetro orderId é obrigatório"] },
-          "Parâmetros inválidos",
-        );
-      }
-
-      const body = await req.json();
-
-      return ApiResponse.success(
-        {
-          id: resolvedParams.orderId,
-          payload: body,
-          updatedBy: context.user.id,
-        },
-        { request: req }
-      );
-    }),
-  )(request, {});
-}
+// PUT foi movido para /api/stores/[storeId]/orders/[orderId]
+// Esta rota agora é apenas para GET (visualização de pedidos)

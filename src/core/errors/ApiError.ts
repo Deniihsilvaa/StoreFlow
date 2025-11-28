@@ -56,5 +56,21 @@ export class ApiError extends Error {
       details,
     });
   }
+
+  static badRequest(message = "Requisição inválida", code = "BAD_REQUEST") {
+    return new ApiError({
+      status: 400,
+      code,
+      message,
+    });
+  }
+
+  static conflict(message = "Conflito", code = "CONFLICT") {
+    return new ApiError({
+      status: 409,
+      code,
+      message,
+    });
+  }
 }
 

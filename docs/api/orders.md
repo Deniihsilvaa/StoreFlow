@@ -274,12 +274,13 @@ Authorization: Bearer {token}
 
 ---
 
-### POST /api/orders/[orderId]/confirm
+### POST /api/stores/[storeId]/orders/[orderId]/confirm
 
 Confirma (aceita) um pedido pendente. Apenas a loja pode confirmar seus pedidos.
 
 #### Parâmetros de URL
 
+- `storeId` (obrigatório): UUID da loja
 - `orderId` (obrigatório): UUID do pedido
 
 #### Headers
@@ -291,6 +292,12 @@ Content-Type: application/json
 
 #### Exemplo de Request
 
+```
+POST /api/stores/45319ec5-7cb8-499b-84b0-896e812dfd2e/orders/d3c3d99c-e221-4371-861b-d61743ffb09e/confirm
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
 ```json
 {
   "estimated_delivery_time": "2025-11-19T18:00:00Z",
@@ -299,7 +306,7 @@ Content-Type: application/json
 ```
 
 **Campos:**
-- `estimated_delivery_time` (opcional): Data/hora estimada de entrega/retirada
+- `estimated_delivery_time` (opcional): Data/hora estimada de entrega/retirada (formato ISO 8601)
 - `observations` (opcional): Observações sobre a confirmação
 
 #### Exemplo de Response (200)
@@ -309,10 +316,13 @@ Content-Type: application/json
   "success": true,
   "data": {
     "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+    "store_id": "45319ec5-7cb8-499b-84b0-896e812dfd2e",
+    "customer_id": "19bf8eff-14d9-468b-9a78-8908dcbf19da",
     "status": "confirmed",
     "estimated_delivery_time": "2025-11-19T18:00:00Z",
-    "confirmed_at": "2025-11-19T10:05:00Z",
-    "message": "Pedido confirmado com sucesso"
+    "observations": "Pedido confirmado, iniciando preparo",
+    "created_at": "2025-11-19T10:00:00Z",
+    "updated_at": "2025-11-19T10:05:00Z"
   },
   "timestamp": "2025-11-19T10:05:00Z"
 }
@@ -336,12 +346,13 @@ Content-Type: application/json
 
 ---
 
-### POST /api/orders/[orderId]/reject
+### POST /api/stores/[storeId]/orders/[orderId]/reject
 
 Rejeita um pedido pendente. Apenas a loja pode rejeitar seus pedidos.
 
 #### Parâmetros de URL
 
+- `storeId` (obrigatório): UUID da loja
 - `orderId` (obrigatório): UUID do pedido
 
 #### Headers
@@ -352,6 +363,12 @@ Content-Type: application/json
 ```
 
 #### Exemplo de Request
+
+```
+POST /api/stores/45319ec5-7cb8-499b-84b0-896e812dfd2e/orders/d3c3d99c-e221-4371-861b-d61743ffb09e/reject
+Authorization: Bearer {token}
+Content-Type: application/json
+```
 
 ```json
 {
@@ -371,10 +388,13 @@ Content-Type: application/json
   "success": true,
   "data": {
     "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+    "store_id": "45319ec5-7cb8-499b-84b0-896e812dfd2e",
+    "customer_id": "19bf8eff-14d9-468b-9a78-8908dcbf19da",
     "status": "cancelled",
     "cancellation_reason": "Produto fora de estoque",
-    "rejected_at": "2025-11-19T10:03:00Z",
-    "message": "Pedido rejeitado com sucesso"
+    "observations": "Desculpe, não temos mais este produto disponível no momento",
+    "created_at": "2025-11-19T10:00:00Z",
+    "updated_at": "2025-11-19T10:03:00Z"
   },
   "timestamp": "2025-11-19T10:03:00Z"
 }
@@ -452,12 +472,13 @@ Authorization: Bearer {token}
 
 ---
 
-### PUT /api/orders/[orderId]
+### PUT /api/stores/[storeId]/orders/[orderId]
 
 Atualiza o status de um pedido confirmado. Permite transições de status durante o processamento.
 
 #### Parâmetros de URL
 
+- `storeId` (obrigatório): UUID da loja
 - `orderId` (obrigatório): UUID do pedido
 
 #### Headers
@@ -469,6 +490,12 @@ Content-Type: application/json
 
 #### Exemplo de Request
 
+```
+PUT /api/stores/45319ec5-7cb8-499b-84b0-896e812dfd2e/orders/d3c3d99c-e221-4371-861b-d61743ffb09e
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
 ```json
 {
   "status": "preparing",
@@ -479,7 +506,7 @@ Content-Type: application/json
 
 **Campos:**
 - `status` (obrigatório): Novo status do pedido (`preparing`, `ready`, `out_for_delivery`, `delivered`)
-- `estimated_delivery_time` (opcional): Atualizar tempo estimado de entrega
+- `estimated_delivery_time` (opcional): Atualizar tempo estimado de entrega (formato ISO 8601)
 - `observations` (opcional): Observações sobre a mudança de status
 
 #### Exemplo de Response (200)
@@ -489,10 +516,13 @@ Content-Type: application/json
   "success": true,
   "data": {
     "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+    "store_id": "45319ec5-7cb8-499b-84b0-896e812dfd2e",
+    "customer_id": "19bf8eff-14d9-468b-9a78-8908dcbf19da",
     "status": "preparing",
     "estimated_delivery_time": "2025-11-19T18:30:00Z",
-    "updated_at": "2025-11-19T10:10:00Z",
-    "message": "Status atualizado com sucesso"
+    "observations": "Pedido em preparo, tempo estimado: 30 minutos",
+    "created_at": "2025-11-19T10:00:00Z",
+    "updated_at": "2025-11-19T10:10:00Z"
   },
   "timestamp": "2025-11-19T10:10:00Z"
 }
@@ -534,8 +564,8 @@ Quando um pedido é criado, ele entra em um fluxo de confirmação onde a loja p
 - **Alerta**: Loja recebe alerta quando pedido está há 4 minutos sem resposta
 
 **Ações Disponíveis:**
-- Loja pode **confirmar** (`POST /api/orders/[orderId]/confirm`)
-- Loja pode **rejeitar** (`POST /api/orders/[orderId]/reject`)
+- Loja pode **confirmar** (`POST /api/stores/[storeId]/orders/[orderId]/confirm`)
+- Loja pode **rejeitar** (`POST /api/stores/[storeId]/orders/[orderId]/reject`)
 - Sistema cancela automaticamente após 5 minutos sem resposta
 
 **Notificações Real-time:**
@@ -690,9 +720,9 @@ cancelled  cancelled  cancelled
 
 ### 🚧 Em Desenvolvimento
 
-- **POST /api/orders/[orderId]/confirm** - Confirmação de pedido
-- **POST /api/orders/[orderId]/reject** - Rejeição de pedido
-- **PUT /api/orders/[orderId]** - Atualização de status
-- **POST /api/orders/[orderId]/confirm-delivery** - Confirmação de recebimento
+- **POST /api/stores/[storeId]/orders/[orderId]/confirm** - Confirmação de pedido (merchant)
+- **POST /api/stores/[storeId]/orders/[orderId]/reject** - Rejeição de pedido (merchant)
+- **PUT /api/stores/[storeId]/orders/[orderId]** - Atualização de status (merchant)
+- **POST /api/orders/[orderId]/confirm-delivery** - Confirmação de recebimento (customer)
 - **Sistema de Timeouts Automáticos** - Jobs para cancelamento automático
 - **Supabase Real-time** - Notificações em tempo real (Postgres Changes, Broadcast, Presence)

@@ -122,3 +122,96 @@ export async function createOrder(
   return ApiResponse.success(order, { request, status: 201 });
 }
 
+/**
+ * Confirma um pedido pendente (apenas para merchants)
+ */
+export async function confirmOrder(
+  request: NextRequest,
+  orderId: string,
+  authUserId: string,
+) {
+  const body = await request.json();
+
+  // Validar dados com Zod
+  const { confirmOrderSchema } = await import("../schemas/confirm-order.schema");
+  const validatedData = confirmOrderSchema.parse(body);
+
+  // Confirmar pedido
+  const order = await ordersService.confirmOrder(orderId, authUserId, {
+    estimatedDeliveryTime: validatedData.estimated_delivery_time,
+    observations: validatedData.observations,
+  });
+
+  return ApiResponse.success(order, { request });
+}
+
+/**
+ * Rejeita um pedido pendente (apenas para merchants)
+ */
+export async function rejectOrder(
+  request: NextRequest,
+  orderId: string,
+  authUserId: string,
+) {
+  const body = await request.json();
+
+  // Validar dados com Zod
+  const { rejectOrderSchema } = await import("../schemas/reject-order.schema");
+  const validatedData = rejectOrderSchema.parse(body);
+
+  // Rejeitar pedido
+  const order = await ordersService.rejectOrder(orderId, authUserId, {
+    reason: validatedData.reason,
+    observations: validatedData.observations,
+  });
+
+  return ApiResponse.success(order, { request });
+}
+
+/**
+ * Atualiza o status de um pedido confirmado (apenas para merchants)
+ */
+export async function updateOrderStatus(
+  request: NextRequest,
+  orderId: string,
+  authUserId: string,
+) {
+  const body = await request.json();
+
+  // Validar dados com Zod
+  const { updateOrderStatusSchema } = await import("../schemas/update-order-status.schema");
+  const validatedData = updateOrderStatusSchema.parse(body);
+
+  // Atualizar status
+  const order = await ordersService.updateOrderStatus(orderId, authUserId, {
+    status: validatedData.status,
+    estimatedDeliveryTime: validatedData.estimated_delivery_time,
+    observations: validatedData.observations,
+  });
+
+  return ApiResponse.success(order, { request });
+}
+
+/**
+ * Confirma recebimento do pedido pelo cliente
+ */
+export async function confirmDelivery(
+  request: NextRequest,
+  orderId: string,
+  customerId: string,
+) {
+  const body = await request.json().catch(() => ({}));
+
+  // Validar dados com Zod (opcional)
+  const { confirmDeliverySchema } = await import("../schemas/confirm-delivery.schema");
+  const validatedData = confirmDeliverySchema.parse(body);
+
+  // Confirmar entrega
+  const order = await ordersService.confirmDelivery(orderId, customerId, {
+    rating: validatedData.rating,
+    feedback: validatedData.feedback,
+  });
+
+  return ApiResponse.success(order, { request });
+}
+

@@ -702,6 +702,567 @@ export class OrdersService {
       total_items: order.total_items ? Number(order.total_items) : null,
     };
   }
+
+  /**
+   * Confirma um pedido pendente (apenas para merchants)
+   */
+  async confirmOrder(
+    orderId: string,
+    authUserId: string,
+    input: {
+      estimatedDeliveryTime?: string;
+      observations?: string;
+    },
+  ): Promise<OrderDetailed> {
+    // Buscar merchant_id a partir do auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: authUserId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new Error("MERCHANT_NAO_ENCONTRADO");
+    }
+
+    // Verificar se o pedido existe e pertence à loja do merchant
+    const orderQuery = `
+      SELECT o.id, o.status, o.store_id, s.merchant_id
+      FROM orders.orders o
+      INNER JOIN public.stores s ON s.id = o.store_id
+      WHERE o.id = $1::uuid AND o.deleted_at IS NULL
+    `;
+
+    const orderResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{
+        id: string;
+        status: string;
+        store_id: string;
+        merchant_id: string;
+      }>>;
+    }).$queryRawUnsafe(orderQuery, orderId)) as Array<{
+      id: string;
+      status: string;
+      store_id: string;
+      merchant_id: string;
+    }>;
+
+    if (orderResult.length === 0) {
+      throw new Error("PEDIDO_NAO_ENCONTRADO");
+    }
+
+    const order = orderResult[0];
+
+    // Verificar se o merchant é dono da loja
+    if (order.merchant_id !== merchant.id) {
+      throw new Error("SEM_PERMISSAO");
+    }
+
+    // Verificar se o pedido está em pending
+    if (order.status !== "pending") {
+      throw new Error("PEDIDO_JA_PROCESSADO");
+    }
+
+    // Atualizar pedido usando transação
+    await (prisma as unknown as {
+      $transaction: <T>(callback: (tx: {
+        $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
+      }) => Promise<T>) => Promise<T>;
+    }).$transaction(async (tx) => {
+      // Atualizar status para confirmed
+      const updateQuery = `
+        UPDATE orders.orders
+        SET 
+          status = 'confirmed'::"orders"."order_status_enum",
+          estimated_delivery_time = $1::timestamptz,
+          observations = CASE 
+            WHEN $2::text IS NOT NULL THEN $2::text 
+            ELSE observations 
+          END,
+          updated_at = NOW()
+        WHERE id = $3::uuid
+      `;
+
+      await tx.$queryRawUnsafe(
+        updateQuery,
+        input.estimatedDeliveryTime || null,
+        input.observations || null,
+        orderId,
+      );
+
+      // Registrar no histórico
+      const historyQuery = `
+        INSERT INTO orders.order_status_history (id, order_id, status, changed_by, note, created_at)
+        VALUES (gen_random_uuid(), $1::uuid, 'confirmed'::"orders"."order_status_enum", $2::uuid, $3::text, NOW())
+      `;
+
+      await tx.$queryRawUnsafe(
+        historyQuery,
+        orderId,
+        authUserId,
+        input.observations || null,
+      );
+    });
+
+    // Buscar pedido atualizado
+    const updatedOrderQuery = `
+      SELECT 
+        id, store_id, customer_id, delivery_option_id, fulfillment_method,
+        pickup_slot, total_amount, delivery_fee, status, payment_method,
+        payment_status, estimated_delivery_time, observations, cancellation_reason,
+        deleted_at, created_at, updated_at, store_name, store_slug,
+        customer_name, customer_phone, delivery_street, delivery_number,
+        delivery_neighborhood, delivery_city, delivery_state, delivery_zip_code,
+        delivery_option_name, delivery_option_fee, items_count, total_items, status_history
+      FROM views.orders_detailed
+      WHERE id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const updatedResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderDetailed[]>;
+    }).$queryRawUnsafe(updatedOrderQuery, orderId)) as OrderDetailed[];
+
+    if (updatedResult.length === 0) {
+      throw new Error("ERRO_AO_BUSCAR_PEDIDO_ATUALIZADO");
+    }
+
+    const updatedOrder = updatedResult[0];
+
+    return {
+      ...updatedOrder,
+      total_amount: updatedOrder.total_amount ? Number(updatedOrder.total_amount) : null,
+      delivery_fee: updatedOrder.delivery_fee ? Number(updatedOrder.delivery_fee) : null,
+      delivery_option_fee: updatedOrder.delivery_option_fee
+        ? Number(updatedOrder.delivery_option_fee)
+        : null,
+      items_count: updatedOrder.items_count ? Number(updatedOrder.items_count) : null,
+      total_items: updatedOrder.total_items ? Number(updatedOrder.total_items) : null,
+    };
+  }
+
+  /**
+   * Rejeita um pedido pendente (apenas para merchants)
+   */
+  async rejectOrder(
+    orderId: string,
+    authUserId: string,
+    input: {
+      reason: string;
+      observations?: string;
+    },
+  ): Promise<OrderDetailed> {
+    // Buscar merchant_id a partir do auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: authUserId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new Error("MERCHANT_NAO_ENCONTRADO");
+    }
+
+    // Verificar se o pedido existe e pertence à loja do merchant
+    const orderQuery = `
+      SELECT o.id, o.status, o.store_id, s.merchant_id
+      FROM orders.orders o
+      INNER JOIN public.stores s ON s.id = o.store_id
+      WHERE o.id = $1::uuid AND o.deleted_at IS NULL
+    `;
+
+    const orderResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{
+        id: string;
+        status: string;
+        store_id: string;
+        merchant_id: string;
+      }>>;
+    }).$queryRawUnsafe(orderQuery, orderId)) as Array<{
+      id: string;
+      status: string;
+      store_id: string;
+      merchant_id: string;
+    }>;
+
+    if (orderResult.length === 0) {
+      throw new Error("PEDIDO_NAO_ENCONTRADO");
+    }
+
+    const order = orderResult[0];
+
+    // Verificar se o merchant é dono da loja
+    if (order.merchant_id !== merchant.id) {
+      throw new Error("SEM_PERMISSAO");
+    }
+
+    // Verificar se o pedido está em pending
+    if (order.status !== "pending") {
+      throw new Error("PEDIDO_JA_PROCESSADO");
+    }
+
+    // Atualizar pedido usando transação
+    await (prisma as unknown as {
+      $transaction: <T>(callback: (tx: {
+        $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
+      }) => Promise<T>) => Promise<T>;
+    }).$transaction(async (tx) => {
+      // Atualizar status para cancelled
+      const updateQuery = `
+        UPDATE orders.orders
+        SET 
+          status = 'cancelled'::"orders"."order_status_enum",
+          cancellation_reason = $1::text,
+          observations = CASE 
+            WHEN $2::text IS NOT NULL THEN $2::text 
+            ELSE observations 
+          END,
+          updated_at = NOW()
+        WHERE id = $3::uuid
+      `;
+
+      await tx.$queryRawUnsafe(
+        updateQuery,
+        input.reason,
+        input.observations || null,
+        orderId,
+      );
+
+      // Registrar no histórico
+      const historyQuery = `
+        INSERT INTO orders.order_status_history (id, order_id, status, changed_by, note, created_at)
+        VALUES (gen_random_uuid(), $1::uuid, 'cancelled'::"orders"."order_status_enum", $2::uuid, $3::text, NOW())
+      `;
+
+      const note = `Rejeitado: ${input.reason}${input.observations ? `. ${input.observations}` : ""}`;
+      await tx.$queryRawUnsafe(
+        historyQuery,
+        orderId,
+        authUserId,
+        note,
+      );
+    });
+
+    // Buscar pedido atualizado
+    const updatedOrderQuery = `
+      SELECT 
+        id, store_id, customer_id, delivery_option_id, fulfillment_method,
+        pickup_slot, total_amount, delivery_fee, status, payment_method,
+        payment_status, estimated_delivery_time, observations, cancellation_reason,
+        deleted_at, created_at, updated_at, store_name, store_slug,
+        customer_name, customer_phone, delivery_street, delivery_number,
+        delivery_neighborhood, delivery_city, delivery_state, delivery_zip_code,
+        delivery_option_name, delivery_option_fee, items_count, total_items, status_history
+      FROM views.orders_detailed
+      WHERE id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const updatedResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderDetailed[]>;
+    }).$queryRawUnsafe(updatedOrderQuery, orderId)) as OrderDetailed[];
+
+    if (updatedResult.length === 0) {
+      throw new Error("ERRO_AO_BUSCAR_PEDIDO_ATUALIZADO");
+    }
+
+    const updatedOrder = updatedResult[0];
+
+    return {
+      ...updatedOrder,
+      total_amount: updatedOrder.total_amount ? Number(updatedOrder.total_amount) : null,
+      delivery_fee: updatedOrder.delivery_fee ? Number(updatedOrder.delivery_fee) : null,
+      delivery_option_fee: updatedOrder.delivery_option_fee
+        ? Number(updatedOrder.delivery_option_fee)
+        : null,
+      items_count: updatedOrder.items_count ? Number(updatedOrder.items_count) : null,
+      total_items: updatedOrder.total_items ? Number(updatedOrder.total_items) : null,
+    };
+  }
+
+  /**
+   * Atualiza o status de um pedido confirmado (apenas para merchants)
+   */
+  async updateOrderStatus(
+    orderId: string,
+    authUserId: string,
+    input: {
+      status: "preparing" | "ready" | "out_for_delivery" | "delivered";
+      estimatedDeliveryTime?: string;
+      observations?: string;
+    },
+  ): Promise<OrderDetailed> {
+    // Buscar merchant_id a partir do auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: authUserId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!merchant) {
+      throw new Error("MERCHANT_NAO_ENCONTRADO");
+    }
+
+    // Verificar se o pedido existe e pertence à loja do merchant
+    const orderQuery = `
+      SELECT o.id, o.status, o.store_id, s.merchant_id, o.fulfillment_method
+      FROM orders.orders o
+      INNER JOIN public.stores s ON s.id = o.store_id
+      WHERE o.id = $1::uuid AND o.deleted_at IS NULL
+    `;
+
+    const orderResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{
+        id: string;
+        status: string;
+        store_id: string;
+        merchant_id: string;
+        fulfillment_method: string;
+      }>>;
+    }).$queryRawUnsafe(orderQuery, orderId)) as Array<{
+      id: string;
+      status: string;
+      store_id: string;
+      merchant_id: string;
+      fulfillment_method: string;
+    }>;
+
+    if (orderResult.length === 0) {
+      throw new Error("PEDIDO_NAO_ENCONTRADO");
+    }
+
+    const order = orderResult[0];
+
+    // Verificar se o merchant é dono da loja
+    if (order.merchant_id !== merchant.id) {
+      throw new Error("SEM_PERMISSAO");
+    }
+
+    // Validar transição de status
+    const validTransitions: Record<string, string[]> = {
+      confirmed: ["preparing"],
+      preparing: ["ready"],
+      ready: ["out_for_delivery", "delivered"],
+      out_for_delivery: ["delivered"],
+    };
+
+    const allowedStatuses = validTransitions[order.status];
+    if (!allowedStatuses || !allowedStatuses.includes(input.status)) {
+      throw new Error("TRANSICAO_INVALIDA");
+    }
+
+    // Validar se out_for_delivery só é permitido para delivery
+    if (input.status === "out_for_delivery" && order.fulfillment_method !== "delivery") {
+      throw new Error("OUT_FOR_DELIVERY_APENAS_DELIVERY");
+    }
+
+    // Atualizar pedido usando transação
+    await (prisma as unknown as {
+      $transaction: <T>(callback: (tx: {
+        $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
+      }) => Promise<T>) => Promise<T>;
+    }).$transaction(async (tx) => {
+      // Atualizar status
+      const updateQuery = `
+        UPDATE orders.orders
+        SET 
+          status = $1::"orders"."order_status_enum",
+          estimated_delivery_time = CASE 
+            WHEN $2::timestamptz IS NOT NULL THEN $2::timestamptz 
+            ELSE estimated_delivery_time 
+          END,
+          observations = CASE 
+            WHEN $3::text IS NOT NULL THEN $3::text 
+            ELSE observations 
+          END,
+          updated_at = NOW()
+        WHERE id = $4::uuid
+      `;
+
+      await tx.$queryRawUnsafe(
+        updateQuery,
+        input.status,
+        input.estimatedDeliveryTime || null,
+        input.observations || null,
+        orderId,
+      );
+
+      // Registrar no histórico
+      const historyQuery = `
+        INSERT INTO orders.order_status_history (id, order_id, status, changed_by, note, created_at)
+        VALUES (gen_random_uuid(), $1::uuid, $2::"orders"."order_status_enum", $3::uuid, $4::text, NOW())
+      `;
+
+      await tx.$queryRawUnsafe(
+        historyQuery,
+        orderId,
+        input.status,
+        authUserId,
+        input.observations || null,
+      );
+    });
+
+    // Buscar pedido atualizado
+    const updatedOrderQuery = `
+      SELECT 
+        id, store_id, customer_id, delivery_option_id, fulfillment_method,
+        pickup_slot, total_amount, delivery_fee, status, payment_method,
+        payment_status, estimated_delivery_time, observations, cancellation_reason,
+        deleted_at, created_at, updated_at, store_name, store_slug,
+        customer_name, customer_phone, delivery_street, delivery_number,
+        delivery_neighborhood, delivery_city, delivery_state, delivery_zip_code,
+        delivery_option_name, delivery_option_fee, items_count, total_items, status_history
+      FROM views.orders_detailed
+      WHERE id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const updatedResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderDetailed[]>;
+    }).$queryRawUnsafe(updatedOrderQuery, orderId)) as OrderDetailed[];
+
+    if (updatedResult.length === 0) {
+      throw new Error("ERRO_AO_BUSCAR_PEDIDO_ATUALIZADO");
+    }
+
+    const updatedOrder = updatedResult[0];
+
+    return {
+      ...updatedOrder,
+      total_amount: updatedOrder.total_amount ? Number(updatedOrder.total_amount) : null,
+      delivery_fee: updatedOrder.delivery_fee ? Number(updatedOrder.delivery_fee) : null,
+      delivery_option_fee: updatedOrder.delivery_option_fee
+        ? Number(updatedOrder.delivery_option_fee)
+        : null,
+      items_count: updatedOrder.items_count ? Number(updatedOrder.items_count) : null,
+      total_items: updatedOrder.total_items ? Number(updatedOrder.total_items) : null,
+    };
+  }
+
+  /**
+   * Confirma recebimento do pedido pelo cliente
+   */
+  async confirmDelivery(
+    orderId: string,
+    customerId: string,
+    input?: {
+      rating?: number;
+      feedback?: string;
+    },
+  ): Promise<OrderDetailed> {
+    // Verificar se o pedido existe e pertence ao cliente
+    const orderQuery = `
+      SELECT o.id, o.status, o.customer_id, o.fulfillment_method
+      FROM orders.orders o
+      WHERE o.id = $1::uuid AND o.deleted_at IS NULL
+    `;
+
+    const orderResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<Array<{
+        id: string;
+        status: string;
+        customer_id: string;
+        fulfillment_method: string;
+      }>>;
+    }).$queryRawUnsafe(orderQuery, orderId)) as Array<{
+      id: string;
+      status: string;
+      customer_id: string;
+      fulfillment_method: string;
+    }>;
+
+    if (orderResult.length === 0) {
+      throw new Error("PEDIDO_NAO_ENCONTRADO");
+    }
+
+    const order = orderResult[0];
+
+    // Verificar se o cliente é dono do pedido
+    if (order.customer_id !== customerId) {
+      throw new Error("SEM_PERMISSAO");
+    }
+
+    // Verificar se o pedido está em out_for_delivery ou ready
+    if (order.status !== "out_for_delivery" && order.status !== "ready") {
+      throw new Error("STATUS_INVALIDO_PARA_CONFIRMACAO");
+    }
+
+    // Atualizar pedido usando transação
+    await (prisma as unknown as {
+      $transaction: <T>(callback: (tx: {
+        $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown[]>;
+      }) => Promise<T>) => Promise<T>;
+    }).$transaction(async (tx) => {
+      // Atualizar status para delivered
+      const updateQuery = `
+        UPDATE orders.orders
+        SET 
+          status = 'delivered'::"orders"."order_status_enum",
+          updated_at = NOW()
+        WHERE id = $1::uuid
+      `;
+
+      await tx.$queryRawUnsafe(updateQuery, orderId);
+
+      // Registrar no histórico
+      const historyQuery = `
+        INSERT INTO orders.order_status_history (id, order_id, status, changed_by, note, created_at)
+        VALUES (gen_random_uuid(), $1::uuid, 'delivered'::"orders"."order_status_enum", $2::uuid, $3::text, NOW())
+      `;
+
+      const note = input?.feedback 
+        ? `Confirmado pelo cliente${input.rating ? ` - Avaliação: ${input.rating}/5` : ""}. ${input.feedback}`
+        : `Confirmado pelo cliente${input?.rating ? ` - Avaliação: ${input.rating}/5` : ""}`;
+
+      await tx.$queryRawUnsafe(
+        historyQuery,
+        orderId,
+        customerId,
+        note,
+      );
+    });
+
+    // Buscar pedido atualizado
+    const updatedOrderQuery = `
+      SELECT 
+        id, store_id, customer_id, delivery_option_id, fulfillment_method,
+        pickup_slot, total_amount, delivery_fee, status, payment_method,
+        payment_status, estimated_delivery_time, observations, cancellation_reason,
+        deleted_at, created_at, updated_at, store_name, store_slug,
+        customer_name, customer_phone, delivery_street, delivery_number,
+        delivery_neighborhood, delivery_city, delivery_state, delivery_zip_code,
+        delivery_option_name, delivery_option_fee, items_count, total_items, status_history
+      FROM views.orders_detailed
+      WHERE id = $1::uuid AND deleted_at IS NULL
+    `;
+
+    const updatedResult = (await (prisma as unknown as {
+      $queryRawUnsafe: (query: string, ...values: unknown[]) => Promise<OrderDetailed[]>;
+    }).$queryRawUnsafe(updatedOrderQuery, orderId)) as OrderDetailed[];
+
+    if (updatedResult.length === 0) {
+      throw new Error("ERRO_AO_BUSCAR_PEDIDO_ATUALIZADO");
+    }
+
+    const updatedOrder = updatedResult[0];
+
+    return {
+      ...updatedOrder,
+      total_amount: updatedOrder.total_amount ? Number(updatedOrder.total_amount) : null,
+      delivery_fee: updatedOrder.delivery_fee ? Number(updatedOrder.delivery_fee) : null,
+      delivery_option_fee: updatedOrder.delivery_option_fee
+        ? Number(updatedOrder.delivery_option_fee)
+        : null,
+      items_count: updatedOrder.items_count ? Number(updatedOrder.items_count) : null,
+      total_items: updatedOrder.total_items ? Number(updatedOrder.total_items) : null,
+    };
+  }
 }
 
 export const ordersService = new OrdersService();
