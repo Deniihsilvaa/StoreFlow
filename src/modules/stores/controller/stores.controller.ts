@@ -4,15 +4,31 @@ import { ApiResponse } from "@/core/responses/ApiResponse";
 import { ApiError } from "@/core/errors/ApiError";
 import { storesService } from "../service/stores.service";
 
-export async function getStoreById(storeId: string, request?: NextRequest) {
-  if (!storeId) {
+export type GetStoreParams = {
+  identifier: string;
+  type: "id" | "slug";
+  request?: NextRequest;
+}
+
+export async function getStoreById(
+  identifier: string,
+  type: "id" | "slug",
+  request?: NextRequest,
+) {
+console.log("identifier", identifier);
+  if (!identifier || identifier.trim() === "") {
     throw ApiError.validation(
-      { storeId: ["Parâmetro storeId é obrigatório"] },
+      { storeId: ["Identificador é obrigatório"] },
       "Parâmetros inválidos",
     );
   }
+  let store
+  if (type === "id") {
+    store = await storesService.getStoreById(identifier);
+  } else {
+    store = await storesService.getStoreBySlug(identifier);
+  }
 
-  const store = await storesService.getStoreById(storeId);
 
   if (!store) {
     throw ApiError.notFound("Loja não encontrada");
