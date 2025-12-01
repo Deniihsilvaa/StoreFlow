@@ -177,7 +177,7 @@ export class StorageService {
         .remove([path]);
 
       if (error) {
-        logger.error("Erro ao deletar arquivo do storage", { error, path });
+        logger.error({ error, path }, "Erro ao deletar arquivo do storage");
         throw ApiError.validation(
           { path, error: error.message },
           "Erro ao remover arquivo do storage",
@@ -187,7 +187,7 @@ export class StorageService {
       if (error instanceof ApiError) {
         throw error;
       }
-      logger.error("Erro inesperado ao deletar arquivo", { error, path });
+      logger.error({ error, path }, "Erro inesperado ao deletar arquivo");
       throw ApiError.validation(
         { path },
         "Erro inesperado ao remover arquivo",
@@ -239,7 +239,7 @@ export class StorageService {
         });
 
       if (error) {
-        logger.error("Erro ao fazer upload para Supabase Storage", { error, filePath });
+        logger.error({ error, filePath }, "Erro ao fazer upload para Supabase Storage");
         throw ApiError.validation(
           { path: filePath, error: error.message },
           "Erro ao fazer upload do arquivo",
@@ -265,13 +265,13 @@ export class StorageService {
         );
       }
 
-      logger.info("Upload realizado com sucesso", {
+      logger.info({
         entityType,
         entityId,
         category,
         path: filePath,
         size: file.size,
-      });
+      }, "Upload realizado com sucesso");
 
       return {
         url: urlData.publicUrl,
@@ -283,7 +283,7 @@ export class StorageService {
       if (error instanceof ApiError) {
         throw error;
       }
-      logger.error("Erro inesperado no upload", { error, options });
+      logger.error({ error, options }, "Erro inesperado no upload");
       throw ApiError.validation(
         { entityType, entityId, category },
         "Erro inesperado ao fazer upload do arquivo",
@@ -307,7 +307,7 @@ export class StorageService {
         await this.deleteFile(oldPath);
       } catch (error) {
         // Log mas não falha o upload se não conseguir deletar o antigo
-        logger.warn("Não foi possível remover arquivo antigo", { oldPath, error });
+        logger.warn({ oldPath, error }, "Não foi possível remover arquivo antigo");
       }
     }
 
