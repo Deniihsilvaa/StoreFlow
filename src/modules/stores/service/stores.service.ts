@@ -114,9 +114,168 @@ export class StoresService {
     )) as StoreComplete[];
 
     if (storeResult.length === 0) {
-      return null;
+      // Verificar se a loja existe na tabela stores diretamente
+      const storeExists = await prisma.stores.findUnique({
+        where: { id: storeId },
+        select: { 
+          id: true, 
+          deleted_at: true, 
+          name: true,
+          merchant_id: true,
+        },
+      });
+
+      // Se a loja não existe na tabela, retornar null
+      if (!storeExists) {
+        return null; // Loja não existe
+      }
+
+      // Se a loja existe mas está deletada, retornar null
+      if (storeExists.deleted_at) {
+        return null; // Loja foi deletada (soft delete)
+      }
+
+      // Se a loja existe mas não está na view, pode ser problema na view
+      // Por exemplo, a view pode exigir que tenha endereço ou outras condições
+      // Neste caso, vamos buscar diretamente na tabela stores como fallback
+      const storeDirect = await prisma.stores.findUnique({
+        where: { id: storeId },
+        include: {
+          store_addresses: {
+            where: { deleted_at: null },
+            take: 1,
+          },
+          store_working_hours: {
+            where: { deleted_at: null },
+          },
+        },
+      });
+
+      if (!storeDirect) {
+        return null;
+      }
+
+      // Transformar para o formato esperado (similar ao que a view retorna)
+      const transformedStore: StoreComplete = {
+        id: storeDirect.id,
+        merchant_id: storeDirect.merchant_id,
+        name: storeDirect.name,
+        slug: storeDirect.slug,
+        description: storeDirect.description,
+        category: storeDirect.category,
+        custom_category: storeDirect.custom_category,
+        avatar_url: storeDirect.avatar_url,
+        banner_url: storeDirect.banner_url,
+        rating: Number(storeDirect.rating),
+        review_count: storeDirect.review_count,
+        primary_color: storeDirect.primary_color,
+        secondary_color: storeDirect.secondary_color,
+        accent_color: storeDirect.accent_color,
+        text_color: storeDirect.text_color,
+        is_active: storeDirect.is_active,
+        delivery_time: storeDirect.delivery_time,
+        min_order_value: Number(storeDirect.min_order_value),
+        delivery_fee: Number(storeDirect.delivery_fee),
+        free_delivery_above: storeDirect.free_delivery_above ? Number(storeDirect.free_delivery_above) : null,
+        accepts_payment_credit_card: storeDirect.accepts_payment_credit_card,
+        accepts_payment_debit_card: storeDirect.accepts_payment_debit_card,
+        accepts_payment_pix: storeDirect.accepts_payment_pix,
+        accepts_payment_cash: storeDirect.accepts_payment_cash,
+        fulfillment_delivery_enabled: storeDirect.fulfillment_delivery_enabled,
+        fulfillment_pickup_enabled: storeDirect.fulfillment_pickup_enabled,
+        fulfillment_pickup_instructions: storeDirect.fulfillment_pickup_instructions,
+        deleted_at: storeDirect.deleted_at,
+        created_at: storeDirect.created_at,
+        updated_at: storeDirect.updated_at,
+        legal_responsible_name: storeDirect.legal_responsible_name,
+        legal_responsible_document: storeDirect.legal_responsible_document,
+        terms_accepted_at: storeDirect.terms_accepted_at,
+        address_street: storeDirect.store_addresses[0]?.street || null,
+        address_number: storeDirect.store_addresses[0]?.number || null,
+        address_neighborhood: storeDirect.store_addresses[0]?.neighborhood || null,
+        address_city: storeDirect.store_addresses[0]?.city || null,
+        address_state: storeDirect.store_addresses[0]?.state || null,
+        address_zip_code: storeDirect.store_addresses[0]?.zip_code || null,
+        address_complement: storeDirect.store_addresses[0]?.complement || null,
+        products_count: null, // Não temos essa informação sem a view
+        team_members_count: null, // Não temos essa informação sem a view
+        working_hours: storeDirect.store_working_hours.length > 0 
+          ? storeDirect.store_working_hours.reduce((acc, wh) => {
+              const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+              const dayName = dayNames[wh.week_day];
+              if (dayName) {
+                acc[dayName] = {
+                  open: wh.opens_at ? `${String(wh.opens_at.getHours()).padStart(2, '0')}:${String(wh.opens_at.getMinutes()).padStart(2, '0')}` : undefined,
+                  close: wh.closes_at ? `${String(wh.closes_at.getHours()).padStart(2, '0')}:${String(wh.closes_at.getMinutes()).padStart(2, '0')}` : undefined,
+                  closed: wh.is_closed,
+                };
+              }
+              return acc;
+            }, {} as Record<string, { open?: string; close?: string; closed?: boolean }>)
+          : null,
+      };
+
+      // Usar o store transformado em vez do resultado da view
+      // Continuar com a busca de produtos normalmente
+      const store = transformedStore;
+      
+      // Buscar produtos ativos da loja na view products_enriched
+      const productsQuery = `
+        SELECT 
+          id,
+          store_id,
+          name,
+          description,
+          price,
+          cost_price,
+          family,
+          image_url,
+          category,
+          custom_category,
+          is_active,
+          preparation_time,
+          nutritional_info,
+          deleted_at,
+          created_at,
+          updated_at,
+          store_name,
+          store_slug,
+          store_category,
+          customizations_count,
+          extra_lists_count,
+          available_customizations
+        FROM views.products_enriched
+        WHERE store_id = $1::uuid 
+          AND is_active = true 
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC
+      `;
+
+      const productsResult = (await (prisma as any).$queryRawUnsafe(
+        productsQuery,
+        storeId,
+      )) as ProductEnriched[];
+
+      // Transformar dados da loja
+      const transformedStoreData: StoreWithProducts = {
+        ...store,
+        products: productsResult.map((product) => ({
+          ...product,
+          price: product.price ? Number(product.price) : null,
+          cost_price: product.cost_price ? Number(product.cost_price) : null,
+          customizations_count: product.customizations_count
+            ? Number(product.customizations_count)
+            : null,
+          extra_lists_count: product.extra_lists_count
+            ? Number(product.extra_lists_count)
+            : null,
+        })),
+      };
+
+      return transformedStoreData;
     }
 
+    // Se encontrou na view, usar o resultado da view
     const store = storeResult[0];
 
     // 2. Buscar produtos ativos da loja na view products_enriched

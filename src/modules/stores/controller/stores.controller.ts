@@ -16,7 +16,7 @@ export async function getStoreById(
   type: "id" | "slug",
   request?: NextRequest,
 ) {
-console.log("identifier", identifier);
+console.log("identifier", identifier +"-type:"+type);
   if (!identifier || identifier.trim() === "") {
     throw ApiError.validation(
       { storeId: ["Identificador é obrigatório"] },
