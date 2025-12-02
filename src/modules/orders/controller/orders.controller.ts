@@ -81,6 +81,12 @@ export async function createOrder(
     throw ApiError.notFound("Cliente não encontrado");
   }
 
+  // Validar Content-Type antes de fazer parse do body
+  const contentType = request.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    throw ApiError.badRequest('Content-Type deve ser application/json');
+  }
+
   const body = await request.json();
 
   // Validar dados com Zod
@@ -130,6 +136,12 @@ export async function confirmOrder(
   orderId: string,
   authUserId: string,
 ) {
+  // Validar Content-Type antes de fazer parse do body
+  const contentType = request.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    throw ApiError.badRequest('Content-Type deve ser application/json');
+  }
+
   const body = await request.json();
 
   // Validar dados com Zod
@@ -153,6 +165,12 @@ export async function rejectOrder(
   orderId: string,
   authUserId: string,
 ) {
+  // Validar Content-Type antes de fazer parse do body
+  const contentType = request.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    throw ApiError.badRequest('Content-Type deve ser application/json');
+  }
+
   const body = await request.json();
 
   // Validar dados com Zod
@@ -176,6 +194,12 @@ export async function updateOrderStatus(
   orderId: string,
   authUserId: string,
 ) {
+  // Validar Content-Type antes de fazer parse do body
+  const contentType = request.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    throw ApiError.badRequest('Content-Type deve ser application/json');
+  }
+
   const body = await request.json();
 
   // Validar dados com Zod
@@ -200,7 +224,16 @@ export async function confirmDelivery(
   orderId: string,
   customerId: string,
 ) {
-  const body = await request.json().catch(() => ({}));
+  // Validar Content-Type antes de fazer parse do body
+  // Para confirmDelivery, o body é opcional, mas se fornecido deve ser JSON
+  const contentType = request.headers.get('content-type');
+  if (contentType && !contentType.includes('application/json')) {
+    throw ApiError.badRequest('Content-Type deve ser application/json');
+  }
+
+  const body = contentType?.includes('application/json') 
+    ? await request.json() 
+    : {};
 
   // Validar dados com Zod (opcional)
   const { confirmDeliverySchema } = await import("../schemas/confirm-delivery.schema");

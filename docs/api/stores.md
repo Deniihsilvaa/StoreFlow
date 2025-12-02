@@ -4,6 +4,14 @@
 
 Endpoints para gerenciar e consultar informações sobre lojas.
 
+**Nota:** Endpoints de merchant (atualização de loja) estão em `/api/merchant/stores`.
+
+### Status de Implementação
+
+- ✅ `GET /api/stores` - Listar lojas (em desenvolvimento)
+- ✅ `GET /api/stores/[storeId]` - Detalhes da loja
+- ✅ `PATCH /api/merchant/stores/[storeId]` - Atualizar loja (merchant)
+
 ## Endpoints
 
 ### GET /api/stores
@@ -196,7 +204,27 @@ GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e
 #### Tratamento de Erros
 
 - **404**: Loja não encontrada
+- **405**: Método HTTP não permitido (apenas GET é suportado)
 - **422**: Parâmetro storeId inválido
+
+#### Exemplo de Erro 405
+
+Quando um método HTTP não suportado é usado (ex: PUT, POST, DELETE):
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Método PUT não é permitido para este endpoint",
+    "code": "METHOD_NOT_ALLOWED",
+    "status": 405,
+    "details": {
+      "allowedMethods": ["GET"]
+    },
+    "timestamp": "2025-12-01T10:00:00Z"
+  }
+}
+```
 
 ---
 
@@ -330,4 +358,238 @@ Quando `available_customizations` está presente, contém um array de objetos co
   "customization_type": "sauce"
 }
 ```
+
+---
+
+## Endpoints de Merchant
+
+### PATCH /api/merchant/stores/[storeId]
+
+Atualiza as informações da loja do merchant autenticado.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja a ser atualizada
+
+#### Body Parameters
+
+```json
+{
+  // Informações básicas
+  "name"?: "string (mínimo 2, máximo 100 caracteres)",
+  "description"?: "string (máximo 500 caracteres)",
+  "category"?: "hamburgueria | pizzaria | pastelaria | sorveteria | cafeteria | padaria | comida_brasileira | comida_japonesa | doces | mercado | outros",
+  "customCategory"?: "string (máximo 50 caracteres)",
+  
+  // Endereço da loja
+  "address"?: {
+    "street": "string (obrigatório se address enviado)",
+    "number": "string (obrigatório se address enviado)",
+    "neighborhood": "string (obrigatório se address enviado)",
+    "city": "string (obrigatório se address enviado)",
+    "state": "string (obrigatório se address enviado)",
+    "zipCode": "string (obrigatório se address enviado, mínimo 8, máximo 12 caracteres)",
+    "complement"?: "string",
+    "reference"?: "string"
+  },
+  
+  // Horários de funcionamento
+  "workingHours"?: {
+    "monday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "tuesday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "wednesday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "thursday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "friday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "saturday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean },
+    "sunday"?: { "open": "HH:mm", "close": "HH:mm", "closed"?: boolean }
+  },
+  
+  // Configurações de entrega
+  "settings"?: {
+    "isActive"?: "boolean",
+    "deliveryTime"?: "string",
+    "minOrderValue"?: "number (em reais, mínimo 0)",
+    "deliveryFee"?: "number (em reais, mínimo 0)",
+    "freeDeliveryAbove"?: "number (em reais, mínimo 0)",
+    "acceptsPayment"?: {
+      "creditCard"?: "boolean",
+      "debitCard"?: "boolean",
+      "pix"?: "boolean",
+      "cash"?: "boolean"
+    }
+  },
+  
+  // Tema e cores
+  "theme"?: {
+    "primaryColor"?: "string (hex, ex: #FF5733)",
+    "secondaryColor"?: "string (hex, ex: #33FF57)",
+    "accentColor"?: "string (hex, ex: #3357FF)",
+    "textColor"?: "string (hex, ex: #FFFFFF)"
+  }
+}
+```
+
+#### Exemplo de Request
+
+```json
+{
+  "name": "Pizzaria do João",
+  "description": "As melhores pizzas da região",
+  "category": "pizzaria",
+  "address": {
+    "street": "Rua das Flores",
+    "number": "123",
+    "neighborhood": "Centro",
+    "city": "São Paulo",
+    "state": "SP",
+    "zipCode": "01234567"
+  },
+  "workingHours": {
+    "monday": { "open": "18:00", "close": "23:00" },
+    "tuesday": { "open": "18:00", "close": "23:00" },
+    "wednesday": { "open": "18:00", "close": "23:00" },
+    "thursday": { "open": "18:00", "close": "23:00" },
+    "friday": { "open": "18:00", "close": "00:00" },
+    "saturday": { "open": "18:00", "close": "00:00" },
+    "sunday": { "closed": true }
+  },
+  "settings": {
+    "isActive": true,
+    "deliveryTime": "30-45 min",
+    "minOrderValue": 20.00,
+    "deliveryFee": 5.00,
+    "freeDeliveryAbove": 50.00,
+    "acceptsPayment": {
+      "creditCard": true,
+      "debitCard": true,
+      "pix": true,
+      "cash": true
+    }
+  },
+  "theme": {
+    "primaryColor": "#DC2626",
+    "secondaryColor": "#2563EB",
+    "accentColor": "#059669",
+    "textColor": "#FFFFFF"
+  }
+}
+```
+
+#### Exemplo de Response (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Pizzaria do João",
+    "slug": "pizzaria-do-joao",
+    "description": "As melhores pizzas da região",
+    "category": "pizzaria",
+    "avatar_url": null,
+    "banner_url": null,
+    "rating": 4.5,
+    "review_count": 120,
+    "primary_color": "#DC2626",
+    "secondary_color": "#2563EB",
+    "accent_color": "#059669",
+    "text_color": "#FFFFFF",
+    "is_active": true,
+    "delivery_time": "30-45 min",
+    "min_order_value": 20.00,
+    "delivery_fee": 5.00,
+    "free_delivery_above": 50.00,
+    "accepts_payment_credit_card": true,
+    "accepts_payment_debit_card": true,
+    "accepts_payment_pix": true,
+    "accepts_payment_cash": true,
+    "fulfillment_delivery_enabled": true,
+    "fulfillment_pickup_enabled": true,
+    "address_street": "Rua das Flores",
+    "address_number": "123",
+    "address_neighborhood": "Centro",
+    "address_city": "São Paulo",
+    "address_state": "SP",
+    "address_zip_code": "01234567",
+    "working_hours": {
+      "monday": { "open": "18:00", "close": "23:00" },
+      "tuesday": { "open": "18:00", "close": "23:00" },
+      "wednesday": { "open": "18:00", "close": "23:00" },
+      "thursday": { "open": "18:00", "close": "23:00" },
+      "friday": { "open": "18:00", "close": "00:00" },
+      "saturday": { "open": "18:00", "close": "00:00" },
+      "sunday": { "closed": true }
+    },
+    "created_at": "2024-01-01T10:00:00Z",
+    "updated_at": "2024-12-02T10:00:00Z"
+  },
+  "timestamp": "2024-12-02T10:00:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **400**: Content-Type inválido (deve ser `application/json`)
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem atualizar lojas
+- **403**: Sem permissão para atualizar esta loja (loja não pertence ao merchant)
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **422**: Dados inválidos (campos obrigatórios ausentes, formato inválido)
+- **422**: Nome já cadastrado para outra loja do merchant
+
+#### Exemplo de Erro 403 (Sem Permissão)
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Você não tem permissão para atualizar esta loja",
+    "code": "STORE_NOT_OWNED",
+    "status": 403,
+    "timestamp": "2024-12-02T10:00:00Z"
+  }
+}
+```
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem atualizar lojas
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Validação de nome único por merchant (se nome estiver sendo alterado)
+- ✅ Valores monetários devem ser enviados em reais (ex: 20.00 para R$ 20,00)
+- ✅ Horários de funcionamento: formato `HH:mm` (ex: `18:00`, `23:00`)
+- ✅ Se `closed: true` em um dia, não precisa de `open` e `close`
+- ✅ Cores devem estar no formato hexadecimal (ex: `#FF5733`)
+- ✅ Todas as operações são atômicas (transação)
+- ✅ **Endereço**: Se não existir endereço principal, será criado; se existir, será atualizado
+- ✅ **Horários**: Se não existir horário para um dia, será criado; se existir, será atualizado
+- ✅ Apenas os campos fornecidos no request serão atualizados (atualização parcial)
+- ✅ Endereço principal: Se não existir, será criado; se existir, será atualizado
+- ✅ Horários de funcionamento: Se não existir para um dia, será criado; se existir, será atualizado
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
+- ✅ Propriedade da loja validada (verifica se é dono ou membro)
+- ✅ `storeId` validado como UUID
+- ✅ Todas as operações em transação para garantir consistência
+
+#### Otimizações de Performance
+
+O endpoint foi otimizado para garantir execução rápida e evitar timeouts:
+
+- **Busca única de horários**: Todos os horários de funcionamento são buscados em uma única query antes do processamento, reduzindo o número de queries de N (uma por dia) para 1
+- **Transação atômica**: Todas as operações (atualização de loja, endereço e horários) são executadas em uma única transação para garantir consistência
+- **Processamento em memória**: Horários existentes são mapeados em memória para acesso rápido durante o loop de atualização
+
+**Nota Técnica**: A transação usa o timeout padrão do Prisma (5 segundos). Com a otimização implementada, mesmo atualizando todos os 7 dias da semana, a operação completa em menos de 2 segundos.
 

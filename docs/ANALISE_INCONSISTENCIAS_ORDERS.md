@@ -84,12 +84,12 @@ Este documento identifica inconsistências entre a **documentação** (`docs/api
 
 ## 🟡 INCONSISTÊNCIAS DE DADOS
 
-### 3. Status `refunded` no Enum
+### 3. Status `refunded` no Enum ✅ RESOLVIDO
 
-#### ⚠️ Status `refunded` Documentado mas Não no Enum
-- **Documentação:** Lista `refunded` como status possível
-- **Schema Prisma:** Enum `orders_order_status_enum` NÃO contém `refunded`
-- **Enum Atual:**
+#### ✅ Status `refunded` Adicionado ao Enum
+- **Status:** RESOLVIDO ✅
+- **Schema Prisma:** Enum `orders_order_status_enum` agora contém `refunded`
+- **Enum Atualizado:**
   ```prisma
   enum orders_order_status_enum {
     pending
@@ -99,28 +99,26 @@ Este documento identifica inconsistências entre a **documentação** (`docs/api
     out_for_delivery
     delivered
     cancelled
-    // ❌ refunded está faltando
+    refunded  // ✅ Adicionado
   }
   ```
-- **Impacto:** Médio - Não é possível marcar pedido como reembolsado
-- **Ação Necessária:** Adicionar `refunded` ao enum OU remover da documentação
+- **Resolução:** Status `refunded` foi adicionado ao enum conforme documentação
 
-### 4. Status `refunded` no Payment Status
+### 4. Status `refunded` no Payment Status ✅ RESOLVIDO
 
-#### ⚠️ Status `refunded` no Payment Status
-- **Documentação:** Lista `refunded` como status de pagamento possível
-- **Schema Prisma:** Enum `orders_payment_status_enum` NÃO contém `refunded`
-- **Enum Atual:**
+#### ✅ Status `refunded` Adicionado ao Payment Status Enum
+- **Status:** RESOLVIDO ✅
+- **Schema Prisma:** Enum `orders_payment_status_enum` agora contém `refunded`
+- **Enum Atualizado:**
   ```prisma
   enum orders_payment_status_enum {
     pending
     paid
     failed
-    // ❌ refunded está faltando
+    refunded  // ✅ Adicionado
   }
   ```
-- **Impacto:** Médio - Não é possível marcar pagamento como reembolsado
-- **Ação Necessária:** Adicionar `refunded` ao enum OU remover da documentação
+- **Resolução:** Status `refunded` foi adicionado ao enum de status de pagamento conforme documentação
 
 ---
 
@@ -339,4 +337,19 @@ Todas as tabelas necessárias **existem no schema Prisma** e devem estar criadas
 - `src/modules/orders/schemas/update-order-status.schema.ts` - Schema de validação criado
 - `docs/api/orders.md` - Documentação atualizada
 - `docs/ANALISE_INCONSISTENCIAS_ORDERS.md` - Análise atualizada
+
+### 2025-12-01 - Resolução das Inconsistências Status `refunded`
+
+**Problemas Identificados:**
+- Status `refunded` documentado mas ausente em `orders_order_status_enum`
+- Status `refunded` documentado mas ausente em `orders_payment_status_enum`
+
+**Soluções Aplicadas:**
+- ✅ Adicionado `refunded` ao enum `orders_order_status_enum` no schema Prisma
+- ✅ Adicionado `refunded` ao enum `orders_payment_status_enum` no schema Prisma
+- ✅ Documentação de inconsistências atualizada para marcar como resolvido
+
+**Arquivos Modificados:**
+- `prisma/schema.prisma` - Enums atualizados com status `refunded`
+- `docs/ANALISE_INCONSISTENCIAS_ORDERS.md` - Inconsistências marcadas como resolvidas
 

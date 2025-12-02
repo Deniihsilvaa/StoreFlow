@@ -5,6 +5,7 @@ import { ApiError } from "@/core/errors/ApiError";
 import type { CustomerLoginInput } from "@/modules/auth/dto/customer-login.dto";
 import type { CustomerSignUpInput } from "@/modules/auth/dto/customer-signup.dto";
 import type { MerchantLoginInput } from "@/modules/auth/dto/merchant-login.dto";
+import type { MerchantSignUpInput } from "@/modules/auth/dto/merchant-signup.dto";
 import type { RefreshTokenInput } from "@/modules/auth/dto/refresh-token.dto";
 import type { UpdateProfileInput } from "@/modules/auth/dto/update-profile.dto";
 
@@ -26,12 +27,31 @@ export type MerchantLoginResult = {
   user: {
     id: string;
     email: string;
-    storeId: string | null;
-    role: string | null;
+    role: string;
   };
+  stores: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    is_active: boolean;
+    merchant_role: string | null; // Role do merchant na loja (owner ou member role)
+    is_owner: boolean; // Se é dono da loja
+  }>;
 } & AuthTokens;
 export type CustomerSignUpResult = {
   success: boolean;
+};
+export type MerchantSignUpResult = {
+  success: boolean;
+  merchant: {
+    id: string;
+    email: string;
+  };
+  store: {
+    id: string;
+    name: string;
+    slug: string;
+  };
 };
 export type RefreshTokenResult = AuthTokens;
 
@@ -101,8 +121,265 @@ export class AuthService {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  async loginMerchant(_input: MerchantLoginInput): Promise<MerchantLoginResult> {
-    throw new Error("loginMerchant ainda não foi implementado");
+  async loginMerchant(input: MerchantLoginInput): Promise<MerchantLoginResult> {
+    // 1. Autenticar com Supabase Auth
+    const { data: authData, error: authError } =
+      await supabaseAuthClient.auth.signInWithPassword({
+        email: input.email,
+        password: input.password,
+      });
+
+    if (authError) {
+      throw ApiError.unauthorized(authError.message || "Email ou senha inválidos");
+    }
+
+    if (!authData.user) {
+      throw ApiError.unauthorized("Usuário não encontrado");
+    }
+
+    if (!authData.session) {
+      throw ApiError.unauthorized("Sessão não criada");
+    }
+
+    // 2. Buscar merchant pelo auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: authData.user.id,
+        deleted_at: null,
+      },
+    });
+
+    if (!merchant) {
+      throw ApiError.unauthorized("Merchant não encontrado");
+    }
+
+    // 3. Buscar todas as lojas do merchant
+    // 3.1. Lojas onde o merchant é dono (merchant_id)
+    const ownedStores = await prisma.stores.findMany({
+      where: {
+        merchant_id: merchant.id,
+        deleted_at: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        is_active: true,
+      },
+    });
+
+    // 3.2. Lojas onde o merchant é membro (store_merchant_members)
+    const memberStores = await prisma.store_merchant_members.findMany({
+      where: {
+        merchant_id: merchant.id,
+        deleted_at: null,
+      },
+      include: {
+        stores: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            is_active: true,
+          },
+        },
+      },
+    });
+
+    // 4. Combinar e formatar lojas
+    const storesMap = new Map<string, {
+      id: string;
+      name: string;
+      slug: string;
+      is_active: boolean;
+      merchant_role: string | null;
+      is_owner: boolean;
+    }>();
+
+    // Adicionar lojas onde é dono
+    ownedStores.forEach((store) => {
+      storesMap.set(store.id, {
+        id: store.id,
+        name: store.name,
+        slug: store.slug,
+        is_active: store.is_active,
+        merchant_role: "owner",
+        is_owner: true,
+      });
+    });
+
+    // Adicionar lojas onde é membro (sem sobrescrever se já for dono)
+    memberStores.forEach((member) => {
+      if (!storesMap.has(member.stores.id)) {
+        storesMap.set(member.stores.id, {
+          id: member.stores.id,
+          name: member.stores.name,
+          slug: member.stores.slug,
+          is_active: member.stores.is_active,
+          merchant_role: String(member.role), // Converter enum para string
+          is_owner: false,
+        });
+      }
+    });
+
+    const stores = Array.from(storesMap.values());
+
+    // 5. Retornar dados do merchant e lojas confirmadas
+    return {
+      user: {
+        id: merchant.id,
+        email: merchant.email,
+        role: String(merchant.role), // Garantir que seja string
+      },
+      stores, // Já convertido para string no forEach acima
+      token: authData.session.access_token,
+      refreshToken: authData.session.refresh_token,
+    };
+  }
+
+  // Função auxiliar para gerar slug único
+  private async generateUniqueSlug(baseSlug: string): Promise<string> {
+    const slug = baseSlug
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+      .replace(/[^a-z0-9]+/g, "-") // Substitui caracteres especiais por hífen
+      .replace(/^-+|-+$/g, ""); // Remove hífens no início e fim
+
+    let finalSlug = slug;
+    let counter = 1;
+
+    // Verificar se o slug já existe e gerar um único
+    while (true) {
+      const existingStore = await prisma.stores.findFirst({
+        where: {
+          slug: finalSlug,
+          deleted_at: null,
+        },
+      });
+
+      if (!existingStore) {
+        break;
+      }
+
+      finalSlug = `${slug}-${counter}`;
+      counter++;
+    }
+
+    return finalSlug;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async merchantSignUp(input: MerchantSignUpInput): Promise<MerchantSignUpResult> {
+    // 1. Verificar se o email já existe no Supabase Auth (tabela auth.users)
+    const existingAuthUser = await (prisma as any).$queryRawUnsafe(
+      `SELECT id, email FROM auth.users WHERE email = $1 LIMIT 1`,
+      input.email.toLowerCase()
+    ) as Array<{ id: string; email: string }> | undefined;
+
+    let authUserId: string;
+    let merchant: { id: string; email: string; role: string };
+
+    // 2. Se o usuário já existe no Supabase
+    if (existingAuthUser && existingAuthUser.length > 0) {
+      authUserId = existingAuthUser[0].id;
+
+      // 2.1. Verificar se já existe merchant para este usuário
+      const existingMerchant = await prisma.merchants.findFirst({
+        where: {
+          auth_user_id: authUserId,
+          deleted_at: null,
+        },
+      });
+
+      if (existingMerchant) {
+        throw ApiError.conflict("Este email já possui uma conta de merchant cadastrada");
+      }
+
+      // 2.2. Criar merchant para o usuário existente
+      merchant = await prisma.merchants.create({
+        data: {
+          auth_user_id: authUserId,
+          email: input.email.toLowerCase(),
+          role: "admin",
+        },
+      });
+    } else {
+      // 3. Se o usuário NÃO existe no Supabase, criar tudo do zero
+      const { data: authData, error: authError } = await supabaseAuthClient.auth.signUp({
+        email: input.email,
+        password: input.password,
+      });
+
+      if (authError) {
+        throw ApiError.badRequest(authError.message || "Erro ao criar usuário");
+      }
+
+      if (!authData.user) {
+        throw ApiError.badRequest("Erro ao criar usuário no Supabase");
+      }
+
+      authUserId = authData.user.id;
+
+      // 3.1. Criar merchant
+      merchant = await prisma.merchants.create({
+        data: {
+          auth_user_id: authUserId,
+          email: input.email.toLowerCase(),
+          role: "admin",
+        },
+      });
+    }
+
+    // 4. Gerar slug único para a loja
+    const uniqueSlug = await this.generateUniqueSlug(input.storeName);
+
+    // 5. Criar loja com valores padrão
+    const store = await prisma.stores.create({
+      data: {
+        merchant_id: merchant.id,
+        name: input.storeName,
+        slug: uniqueSlug,
+        description: input.storeDescription || null,
+        category: input.storeCategory,
+        custom_category: input.customCategory || null,
+        // Valores padrão conforme schema
+        rating: 0,
+        review_count: 0,
+        primary_color: "#FF5733",
+        secondary_color: "#33FF57",
+        accent_color: "#3357FF",
+        text_color: null,
+        is_active: true,
+        delivery_time: null,
+        min_order_value: 0,
+        delivery_fee: 0,
+        free_delivery_above: null,
+        accepts_payment_credit_card: true,
+        accepts_payment_debit_card: true,
+        accepts_payment_pix: true,
+        accepts_payment_cash: true,
+        fulfillment_delivery_enabled: true,
+        fulfillment_pickup_enabled: true,
+        fulfillment_pickup_instructions: null,
+        legal_responsible_name: null,
+        legal_responsible_document: null,
+        terms_accepted_at: null,
+      },
+    });
+
+    return {
+      success: true,
+      merchant: {
+        id: merchant.id,
+        email: merchant.email,
+      },
+      store: {
+        id: store.id,
+        name: store.name,
+        slug: store.slug,
+      },
+    };
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -263,44 +540,185 @@ export class AuthService {
       });
 
       // Gerenciar endereços se fornecidos
-      // IMPORTANTE: Se addresses for fornecido (mesmo que vazio), substitui todos os endereços
-      // Se não for fornecido, mantém os endereços existentes
+      // Suporta dois formatos:
+      // 1. Formato antigo (compatibilidade): { _legacyArray: [...] } - substituição total
+      // 2. Formato novo (operações parciais): { add: [...], update: [...], remove: [...] }
       if (input.addresses !== undefined) {
-        // Primeiro, fazer hard delete de todos os endereços existentes (incluindo soft deleted)
-        // Isso garante que não há conflito com constraint única que possa existir no banco
-        // O erro sugere que há uma constraint única em customer_id que não está no schema
-        await tx.customer_addresses.deleteMany({
-          where: {
-            customer_id: customer.id,
-          },
-        });
+        // Verificar se é formato antigo (substituição total)
+        if ('_legacyArray' in input.addresses) {
+          // Formato antigo: substituição total (comportamento original)
+          await tx.customer_addresses.deleteMany({
+            where: {
+              customer_id: customer.id,
+            },
+          });
 
-        if (input.addresses.length > 0) {
-          // Criar novos endereços
-          let firstDefaultFound = false;
-          for (const address of input.addresses) {
-            // Garantir que apenas o primeiro endereço marcado como default seja realmente default
-            const isDefault = address.isDefault === true && !firstDefaultFound;
-            if (isDefault) {
-              firstDefaultFound = true;
+          if (input.addresses._legacyArray.length > 0) {
+            let firstDefaultFound = false;
+            for (const address of input.addresses._legacyArray) {
+              const isDefault = address.isDefault === true && !firstDefaultFound;
+              if (isDefault) {
+                firstDefaultFound = true;
+              }
+
+              await tx.customer_addresses.create({
+                data: {
+                  customer_id: customer.id,
+                  label: address.label || null,
+                  address_type: (address.addressType || 'other') as 'home' | 'work' | 'other',
+                  street: address.street,
+                  number: address.number,
+                  neighborhood: address.neighborhood,
+                  city: address.city,
+                  state: address.state,
+                  zip_code: address.zipCode,
+                  complement: address.complement || null,
+                  reference: address.reference || null,
+                  is_default: isDefault,
+                },
+              });
             }
+          }
+        } else {
+          // Formato novo: operações parciais
+          type AddressInput = {
+            label?: string;
+            addressType?: "home" | "work" | "other";
+            street: string;
+            number: string;
+            neighborhood: string;
+            city: string;
+            state: string;
+            zipCode: string;
+            complement?: string;
+            reference?: string;
+            isDefault?: boolean;
+          };
+          
+          const operations = input.addresses as {
+            add?: Array<AddressInput>;
+            update?: Array<AddressInput & { id: string }>;
+            remove?: string[];
+          };
 
-            await tx.customer_addresses.create({
-              data: {
+          // 1. Remover endereços
+          if (operations.remove && operations.remove.length > 0) {
+            await tx.customer_addresses.deleteMany({
+              where: {
+                id: { in: operations.remove },
                 customer_id: customer.id,
-                label: address.label || null,
-                address_type: (address.addressType || 'other') as 'home' | 'work' | 'other',
-                street: address.street,
-                number: address.number,
-                neighborhood: address.neighborhood,
-                city: address.city,
-                state: address.state,
-                zip_code: address.zipCode,
-                complement: address.complement || null,
-                reference: address.reference || null,
-                is_default: isDefault,
               },
             });
+          }
+
+          // 2. Atualizar endereços existentes
+          if (operations.update && operations.update.length > 0) {
+            // Buscar endereços existentes para validar propriedade
+            const existingAddressIds = await tx.customer_addresses.findMany({
+              where: {
+                id: { in: operations.update.map(a => a.id) },
+                customer_id: customer.id,
+                deleted_at: null,
+              },
+              select: { id: true },
+            });
+
+            const validIds = new Set(existingAddressIds.map(a => a.id));
+
+            // Verificar se algum endereço será marcado como default
+            const addressesToSetDefault = operations.update.filter(a => a.isDefault === true);
+            const willSetDefault = addressesToSetDefault.length > 0;
+            
+            // Se algum endereço será marcado como default, remover default dos outros
+            if (willSetDefault) {
+              await tx.customer_addresses.updateMany({
+                where: {
+                  customer_id: customer.id,
+                  is_default: true,
+                  deleted_at: null,
+                },
+                data: {
+                  is_default: false,
+                },
+              });
+            }
+
+            let firstDefaultFound = false;
+            for (const address of operations.update) {
+              if (!validIds.has(address.id)) {
+                throw ApiError.notFound(`Endereço com ID ${address.id} não encontrado ou não pertence ao cliente`);
+              }
+
+              // Garantir que apenas o primeiro endereço com isDefault: true seja realmente default
+              const isDefault = address.isDefault === true && !firstDefaultFound;
+              if (isDefault) {
+                firstDefaultFound = true;
+              }
+
+              await tx.customer_addresses.update({
+                where: { id: address.id },
+                data: {
+                  label: address.label ?? undefined,
+                  address_type: (address.addressType || 'other') as 'home' | 'work' | 'other',
+                  street: address.street,
+                  number: address.number,
+                  neighborhood: address.neighborhood,
+                  city: address.city,
+                  state: address.state,
+                  zip_code: address.zipCode,
+                  complement: address.complement ?? undefined,
+                  reference: address.reference ?? undefined,
+                  is_default: isDefault,
+                  updated_at: new Date(),
+                },
+              });
+            }
+          }
+
+          // 3. Adicionar novos endereços
+          if (operations.add && operations.add.length > 0) {
+            // Verificar se algum endereço novo será marcado como default
+            const addressesToSetDefault = operations.add.filter(a => a.isDefault === true);
+            const willSetDefault = addressesToSetDefault.length > 0;
+            
+            // Se algum endereço novo será marcado como default, remover default dos existentes
+            if (willSetDefault) {
+              await tx.customer_addresses.updateMany({
+                where: {
+                  customer_id: customer.id,
+                  is_default: true,
+                  deleted_at: null,
+                },
+                data: {
+                  is_default: false,
+                },
+              });
+            }
+
+            let firstDefaultFound = false;
+            for (const address of operations.add) {
+              const isDefault = address.isDefault === true && !firstDefaultFound;
+              if (isDefault) {
+                firstDefaultFound = true;
+              }
+
+              await tx.customer_addresses.create({
+                data: {
+                  customer_id: customer.id,
+                  label: address.label || null,
+                  address_type: (address.addressType || 'other') as 'home' | 'work' | 'other',
+                  street: address.street,
+                  number: address.number,
+                  neighborhood: address.neighborhood,
+                  city: address.city,
+                  state: address.state,
+                  zip_code: address.zipCode,
+                  complement: address.complement || null,
+                  reference: address.reference || null,
+                  is_default: isDefault,
+                },
+              });
+            }
           }
         }
       }

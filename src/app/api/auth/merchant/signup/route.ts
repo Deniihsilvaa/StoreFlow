@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { ApiError } from "@/core/errors/ApiError";
 import { withErrorHandling } from "@/core/middlewares/withErrorHandling";
-import { customerLoginController } from "@/modules/auth/controller/customer-login.controller";
+import { merchantSignUpController } from "@/modules/auth/controller/merchant-signup.controller";
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   // Validar Content-Type antes de fazer parse do body
@@ -12,6 +12,6 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   }
 
   const body = await request.json();
-  return customerLoginController(body, request);
+  return merchantSignUpController(body, request);
 });
 

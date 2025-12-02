@@ -72,5 +72,14 @@ export class ApiError extends Error {
       message,
     });
   }
+
+  static methodNotAllowed(message = "Método não permitido", allowedMethods?: string[]) {
+    return new ApiError({
+      status: 405,
+      code: "METHOD_NOT_ALLOWED",
+      message,
+      details: allowedMethods ? { allowedMethods } : undefined,
+    });
+  }
 }
 
