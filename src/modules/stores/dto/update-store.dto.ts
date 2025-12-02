@@ -14,18 +14,40 @@ const addressSchema = z.object({
 
 // Schema para horário de um dia da semana
 const dayWorkingHoursSchema = z.object({
-  open: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, "Formato inválido. Use HH:mm (ex: 18:00)"),
-  close: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, "Formato inválido. Use HH:mm (ex: 23:00)"),
+  open: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, "Formato inválido. Use HH:mm (ex: 18:00)").optional(),
+  close: z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, "Formato inválido. Use HH:mm (ex: 23:00)").optional(),
   closed: z.boolean().optional(),
 }).refine(
   (data) => {
     // Se closed é true, não precisa de open/close
     if (data.closed === true) return true;
-    // Se não está fechado, precisa de open e close
-    return !!data.open && !!data.close;
+    // Se não forneceu nenhum campo, permite (será ignorado ou tratado pelo serviço)
+    if (!data.open && !data.close && data.closed === undefined) return true;
+    // Se forneceu open ou close, ambos são obrigatórios
+    if (data.open || data.close) {
+      return !!data.open && !!data.close;
+    }
+    return true;
   },
   {
-    message: "Se não estiver fechado, 'open' e 'close' são obrigatórios",
+    message: "Campo obrigatório",
+    path: ["open"],
+  }
+).refine(
+  (data) => {
+    // Se closed é true, não precisa de open/close
+    if (data.closed === true) return true;
+    // Se não forneceu nenhum campo, permite (será ignorado ou tratado pelo serviço)
+    if (!data.open && !data.close && data.closed === undefined) return true;
+    // Se forneceu open ou close, ambos são obrigatórios
+    if (data.open || data.close) {
+      return !!data.open && !!data.close;
+    }
+    return true;
+  },
+  {
+    message: "Campo obrigatório",
+    path: ["close"],
   }
 );
 
@@ -89,8 +111,8 @@ export const updateStoreSchema = z.object({
   // Endereço
   address: addressSchema.optional(),
 
-  // Horários de funcionamento
-  workingHours: workingHoursSchema.optional(),
+  // Horários de funcionamento opicional ou nulo
+  workingHours: workingHoursSchema.nullable().optional(),
 
   // Configurações
   settings: settingsSchema.optional(),
