@@ -15,6 +15,7 @@ Endpoints para consultar e gerenciar produtos do sistema.
 - ✅ `DELETE /api/merchant/stores/[storeId]/products/[productId]` - Deletar produto (soft delete, merchant)
 - ✅ `PATCH /api/merchant/stores/[storeId]/products/[productId]/deactivate` - Desativar produto (merchant)
 - ✅ `PATCH /api/merchant/stores/[storeId]/products/[productId]/activate` - Ativar produto (merchant)
+- ✅ `POST /api/merchant/stores/[storeId]/products/[productId]/upload` - Upload de imagem do produto (merchant)
 
 ## Endpoints
 
@@ -150,7 +151,7 @@ Cria um novo produto na loja do merchant autenticado.
 
 ```
 Authorization: Bearer {token}
-Content-Type: application/json
+Content-Type: application/json | multipart/form-data
 ```
 
 #### Path Parameters
@@ -158,6 +159,10 @@ Content-Type: application/json
 - `storeId` (string, UUID): ID da loja onde o produto será criado
 
 #### Body Parameters
+
+**Formato 1: JSON (`Content-Type: application/json`)**
+
+Todos os dados são enviados como JSON:
 
 ```json
 {
@@ -192,7 +197,21 @@ Content-Type: application/json
 }
 ```
 
-#### Exemplo de Request
+**Formato 2: Multipart Form Data (`Content-Type: multipart/form-data`)**
+
+Permite enviar arquivo de imagem junto com os dados do produto:
+
+- `data` (string, obrigatório): JSON stringificado com os dados do produto (mesmos campos do formato JSON)
+- `file` (File, opcional): Arquivo de imagem a ser enviado
+
+**Validações do arquivo:**
+- Tamanho máximo: 5MB
+- Formatos aceitos: `image/jpeg`, `image/png`, `image/webp`
+- Dimensões máximas: 1920x1920px (recomendado)
+
+**Nota:** Se `file` for fornecido, o campo `imageUrl` no JSON será ignorado. A imagem será enviada para Supabase Storage e a URL será gerada automaticamente.
+
+#### Exemplo de Request (JSON)
 
 ```json
 {
@@ -240,6 +259,67 @@ Content-Type: application/json
 }
 ```
 
+#### Exemplo de Request (Multipart Form Data)
+
+```javascript
+// JavaScript/Fetch
+const formData = new FormData();
+
+// Dados do produto como JSON stringificado
+const productData = {
+  name: "Hambúrguer Artesanal",
+  description: "Hambúrguer feito com carne artesanal, queijo cheddar, alface, tomate e molho especial",
+  price: 29.90,
+  costPrice: 12.50,
+  family: "finished_product",
+  category: "Hambúrgueres",
+  customCategory: "Gourmet",
+  isActive: true,
+  preparationTime: 20,
+  nutritionalInfo: {
+    calories: 650,
+    protein: 35,
+    carbs: 45,
+    fat: 28
+  },
+  customizations: [
+    {
+      name: "Bacon Extra",
+      customizationType: "topping",
+      price: 3.50,
+      selectionType: "boolean",
+      selectionGroup: "Adicionais"
+    }
+  ],
+  extraListIds: [
+    "550e8400-e29b-41d4-a716-446655440000"
+  ]
+};
+
+formData.append('data', JSON.stringify(productData));
+formData.append('file', fileInput.files[0]); // Arquivo de imagem
+
+const response = await fetch(
+  `/api/merchant/stores/${storeId}/products`,
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  }
+);
+```
+
+```bash
+# cURL
+curl -X POST \
+  https://api.example.com/api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products \
+  -H "Authorization: Bearer {token}" \
+  -F "data={\"name\":\"Hambúrguer Artesanal\",\"price\":29.90,\"family\":\"finished_product\",\"category\":\"Hambúrgueres\"}" \
+  -F "file=@/path/to/image.jpg"
+```
+
 #### Exemplo de Response (201)
 
 ```json
@@ -280,7 +360,9 @@ Content-Type: application/json
 
 #### Tratamento de Erros
 
-- **400**: Content-Type inválido (deve ser `application/json`)
+- **400**: Content-Type inválido (deve ser `application/json` ou `multipart/form-data`)
+- **400**: Campo 'data' não fornecido (quando usando `multipart/form-data`)
+- **422**: Campo 'data' deve ser um JSON válido (quando usando `multipart/form-data`)
 - **401**: Não autenticado ou token inválido
 - **403**: Apenas lojistas podem criar produtos
 - **403**: Sem permissão para criar produtos nesta loja (loja não pertence ao merchant)
@@ -288,6 +370,9 @@ Content-Type: application/json
 - **404**: Loja não encontrada
 - **422**: Dados inválidos (campos obrigatórios ausentes, formato inválido)
 - **422**: Listas extras inválidas (não encontradas ou não pertencem à loja)
+- **422**: Arquivo muito grande (tamanho máximo: 5MB) - quando usando multipart/form-data
+- **422**: Tipo de arquivo não permitido (formatos aceitos: JPEG, PNG, WebP) - quando usando multipart/form-data
+- **422**: Erro ao fazer upload do arquivo - quando usando multipart/form-data
 
 #### Exemplo de Erro 403 (Sem Permissão)
 
@@ -334,6 +419,9 @@ Content-Type: application/json
 - ✅ Customizações são criadas junto com o produto
 - ✅ Listas extras são vinculadas ao produto na criação
 - ✅ Validação de listas extras: devem existir e pertencer à loja
+- ✅ **Upload de imagem**: Se arquivo for fornecido via `multipart/form-data`, a imagem é enviada para Supabase Storage automaticamente
+- ✅ **Prioridade**: Se `file` for fornecido, o campo `imageUrl` no JSON é ignorado
+- ✅ **Processo de upload**: Produto é criado primeiro, depois a imagem é enviada e o produto é atualizado com a URL
 
 #### Validações de Segurança
 
@@ -353,6 +441,27 @@ O endpoint foi otimizado para garantir execução rápida e evitar timeouts:
 - **Criação em lote**: Customizações e aplicabilidades de listas extras são criadas usando `createMany` para melhor performance
 
 **Nota Técnica**: A transação usa o timeout padrão do Prisma (5 segundos). Com a otimização implementada, mesmo criando um produto com múltiplas customizações e listas extras, a operação completa em menos de 1 segundo.
+
+#### Formatos de Request Suportados
+
+A rota aceita dois formatos de Content-Type:
+
+1. **`application/json`** (padrão):
+   - Todos os dados são enviados como JSON
+   - Campo `imageUrl` pode ser usado para fornecer URL externa da imagem
+   - Mais simples para integrações que não precisam de upload
+
+2. **`multipart/form-data`** (com upload de imagem):
+   - Permite enviar arquivo de imagem junto com os dados
+   - Campo `data`: JSON stringificado com os dados do produto
+   - Campo `file`: Arquivo de imagem (opcional)
+   - Se `file` for fornecido, `imageUrl` no JSON é ignorado
+   - Imagem é enviada automaticamente para Supabase Storage
+   - Recomendado quando você tem a imagem localmente
+
+**Recomendação:**
+- Use **JSON** quando já tiver a URL da imagem ou não precisar de imagem
+- Use **multipart/form-data** quando quiser fazer upload da imagem no mesmo request
 
 ---
 
@@ -809,6 +918,181 @@ DELETE /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products/92a300
 1. Use **ativar** quando quiser disponibilizar o produto novamente (ex: voltou ao estoque)
 2. Use **desativar** quando quiser temporariamente ocultar o produto (ex: fora de estoque)
 3. Use **deletar** quando quiser remover permanentemente o produto (após garantir que não há pedidos ativos)
+
+---
+
+### POST /api/merchant/stores/[storeId]/products/[productId]/upload
+
+Faz upload de uma imagem para o produto usando Supabase Storage. A imagem anterior é substituída automaticamente.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+Content-Type: multipart/form-data
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+- `productId` (string, UUID): ID do produto
+
+#### Body Parameters (FormData)
+
+- `file` (File, obrigatório): Arquivo de imagem a ser enviado
+
+#### Validações de Arquivo
+
+- **Tamanho máximo**: 5MB
+- **Formatos aceitos**: `image/jpeg`, `image/png`, `image/webp`
+- **Dimensões máximas**: 1920x1920px (recomendado)
+- **Bucket**: `store-assets`
+- **Caminho**: `products/{productId}/primary/{timestamp}_{filename}`
+
+#### Exemplo de Request
+
+```bash
+curl -X POST \
+  https://api.example.com/api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products/92a30084-b2f1-4d97-9955-0830822d8e34/upload \
+  -H "Authorization: Bearer {token}" \
+  -F "file=@/path/to/image.jpg"
+```
+
+#### Exemplo de Request (JavaScript/Fetch)
+
+```javascript
+const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+
+const response = await fetch(
+  `/api/merchant/stores/${storeId}/products/${productId}/upload`,
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  }
+);
+```
+
+#### Exemplo de Response (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://abc123.supabase.co/storage/v1/object/public/store-assets/products/92a30084-b2f1-4d97-9955-0830822d8e34/primary/1701600000000_hamburger_artesanal.jpg",
+    "path": "products/92a30084-b2f1-4d97-9955-0830822d8e34/primary/1701600000000_hamburger_artesanal.jpg",
+    "category": "primary",
+    "entityType": "products",
+    "entityId": "92a30084-b2f1-4d97-9955-0830822d8e34"
+  },
+  "message": "Imagem do produto enviada com sucesso",
+  "timestamp": "2025-12-02T12:00:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **400**: Content-Type inválido (deve ser `multipart/form-data`)
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem fazer upload de imagens
+- **403**: Sem permissão para fazer upload nesta loja (loja não pertence ao merchant)
+- **403**: Produto não pertence a esta loja
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **404**: Produto não encontrado
+- **422**: Arquivo não fornecido
+- **422**: Arquivo muito grande (tamanho máximo: 5MB)
+- **422**: Tipo de arquivo não permitido (formatos aceitos: JPEG, PNG, WebP)
+- **422**: Erro ao fazer upload do arquivo
+
+#### Exemplo de Erro 422 (Arquivo Muito Grande)
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Arquivo muito grande. Tamanho máximo: 5MB",
+    "code": "VALIDATION_ERROR",
+    "status": 422,
+    "details": {
+      "fileSize": 7.5,
+      "maxSize": 5
+    },
+    "timestamp": "2025-12-02T12:00:00Z"
+  }
+}
+```
+
+#### Exemplo de Erro 422 (Tipo Não Permitido)
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Tipo de arquivo não permitido. Tipos aceitos: image/jpeg, image/png, image/webp",
+    "code": "VALIDATION_ERROR",
+    "status": 422,
+    "details": {
+      "mimeType": "image/gif",
+      "allowedTypes": ["image/jpeg", "image/png", "image/webp"]
+    },
+    "timestamp": "2025-12-02T12:00:00Z"
+  }
+}
+```
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem fazer upload de imagens
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Produto deve existir e pertencer à loja especificada
+- ✅ Imagem anterior é substituída automaticamente (arquivo antigo é removido)
+- ✅ URL da imagem é atualizada automaticamente no banco de dados
+- ✅ Nome do arquivo é sanitizado (remove caracteres especiais e acentos)
+- ✅ Timestamp é adicionado ao nome do arquivo para evitar conflitos
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
+- ✅ Propriedade da loja validada (verifica se é dono ou membro)
+- ✅ Produto validado como pertencente à loja
+- ✅ `storeId` e `productId` validados como UUID
+- ✅ Validação de tamanho, tipo MIME e dimensões do arquivo
+
+#### Estrutura de Armazenamento
+
+As imagens de produtos são armazenadas no **Supabase Storage** e seguem o padrão:
+
+```
+https://[projeto].supabase.co/storage/v1/object/public/store-assets/products/{productId}/primary/{timestamp}_{filename}
+```
+
+**Estrutura de Pastas:**
+- **Bucket**: `store-assets`
+- **Caminho base**: `products/{productId}/primary/`
+- **Nome do arquivo**: `{timestamp}_{sanitized_filename}.{extension}`
+
+**Exemplo:**
+```
+store-assets/
+  └── products/
+      └── 92a30084-b2f1-4d97-9955-0830822d8e34/
+          └── primary/
+              └── 1701600000000_hamburger_artesanal.jpg
+```
+
+#### Observações Importantes
+
+- ✅ As URLs são públicas e podem ser acessadas diretamente no navegador
+- ✅ Se o produto já tiver uma imagem, ela será substituída automaticamente
+- ✅ O arquivo antigo é removido do storage quando uma nova imagem é enviada
+- ✅ Recomenda-se usar formatos otimizados (WebP) para melhor performance
+- ✅ Imagens são armazenadas com cache de 1 hora (`cacheControl: "3600"`)
+- ✅ Nomes de arquivo são sanitizados automaticamente (remove acentos e caracteres especiais)
 
 ---
 

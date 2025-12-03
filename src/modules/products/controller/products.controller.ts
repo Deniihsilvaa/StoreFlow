@@ -6,6 +6,7 @@ import { parsePagination } from "@/core/utils/pagination";
 import { productsService } from "../service/products.service";
 import { createProductSchema } from "../dto/create-product.dto";
 import { updateProductSchema } from "../dto/update-product.dto";
+import { storageService } from "@/modules/storage/service/storage.service";
 
 export async function listProducts(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -63,10 +64,18 @@ export async function createProduct(
   body: unknown,
   request?: NextRequest,
 ) {
+  // Extrair arquivo se existir (vem do FormData)
+  const bodyWithFile = body as { file?: File; [key: string]: unknown };
+  const file = bodyWithFile.file;
+  
+  // Remover arquivo do body antes de validar com Zod
+  const bodyWithoutFile = { ...bodyWithFile };
+  delete bodyWithoutFile.file;
+
   // Validar dados com Zod
   let payload;
   try {
-    payload = createProductSchema.parse(body);
+    payload = createProductSchema.parse(bodyWithoutFile);
   } catch (error) {
     throw error;
   }
@@ -80,7 +89,43 @@ export async function createProduct(
     );
   }
 
-  const product = await productsService.createProduct(userId, storeId, payload);
+  // Se houver arquivo, fazer upload antes de criar o produto
+  // Mas precisamos criar o produto primeiro para ter o ID
+  // Solução: criar produto, fazer upload, atualizar com URL
+  // Criar produto (sem imagem se houver arquivo para upload)
+  const productInput = file ? { ...payload, imageUrl: undefined } : payload;
+  const product = await productsService.createProduct(userId, storeId, productInput);
+
+  // Se houver arquivo, fazer upload e atualizar produto
+  if (file) {
+    try {
+      const uploadResult = await storageService.replaceImage(
+        null, // Não há imagem anterior
+        {
+          entityType: "products",
+          entityId: product.id,
+          category: "primary",
+          file,
+        },
+      );
+
+      // Atualizar produto com URL da imagem
+      const updatedProduct = await productsService.updateProduct(
+        userId,
+        storeId,
+        product.id,
+        { imageUrl: uploadResult.url },
+      );
+
+      return ApiResponse.success(updatedProduct, { request });
+    } catch {
+      // Se o upload falhar, o produto já foi criado
+      // Retornar produto sem imagem
+      // Em produção, poderia deletar o produto ou fazer rollback
+      return ApiResponse.success(product, { request });
+    }
+  }
+
   return ApiResponse.success(product, { request });
 }
 

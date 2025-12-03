@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { ApiResponse } from "@/core/responses/ApiResponse";
 import { storageService } from "@/modules/storage/service/storage.service";
-import { uploadImageSchema } from "@/modules/storage/dto/upload-image.dto";
 import { ApiError } from "@/core/errors/ApiError";
 import type { AuthenticatedUser } from "@/core/middlewares/withAuth";
 import { prisma } from "@/infra/prisma/client";
@@ -81,19 +80,40 @@ export async function uploadProductImage(
   storeId: string,
   productId: string,
 ) {
-  // Verificar se a loja existe e pertence ao merchant
-  const store = await prisma.stores.findUnique({
-    where: { id: storeId },
-    select: { id: true, merchant_id: true },
+  // Verificar se a loja existe e se o merchant tem permissão
+  const merchant = await prisma.merchants.findFirst({
+    where: {
+      auth_user_id: user.id,
+      deleted_at: null,
+    },
+    include: {
+      stores: {
+        where: {
+          id: storeId,
+          deleted_at: null,
+        },
+        select: { id: true },
+      },
+      store_merchant_members: {
+        where: {
+          store_id: storeId,
+          deleted_at: null,
+        },
+        select: { store_id: true },
+      },
+    },
   });
 
-  if (!store) {
-    throw ApiError.notFound("Loja não encontrada");
+  if (!merchant) {
+    throw ApiError.notFound("Merchant não encontrado", "MERCHANT_NOT_FOUND");
   }
 
-  // Verificar se o usuário é o dono da loja
-  if (user.type !== "merchant" || store.merchant_id !== user.id) {
-    throw ApiError.forbidden("Você não tem permissão para atualizar esta loja");
+  // Validar propriedade da loja (dono ou membro)
+  const isOwner = merchant.stores.some(s => s.id === storeId);
+  const isMember = merchant.store_merchant_members.some(m => m.store_id === storeId);
+
+  if (!isOwner && !isMember) {
+    throw ApiError.forbidden("Você não tem permissão para fazer upload de imagens nesta loja");
   }
 
   // Verificar se o produto existe e pertence à loja
