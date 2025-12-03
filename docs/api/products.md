@@ -10,6 +10,7 @@ Endpoints para consultar e gerenciar produtos do sistema.
 
 - ✅ `GET /api/products` - Listar produtos
 - ✅ `GET /api/products/[productId]` - Detalhes do produto
+- ✅ `GET /api/merchant/stores/[storeId]/products/[productId]` - Visualizar produto completo com histórico e estatísticas (merchant)
 - ✅ `POST /api/merchant/stores/[storeId]/products` - Criar produto (merchant)
 - ✅ `PATCH /api/merchant/stores/[storeId]/products/[productId]` - Atualizar produto (merchant)
 - ✅ `DELETE /api/merchant/stores/[storeId]/products/[productId]` - Deletar produto (soft delete, merchant)
@@ -144,6 +145,173 @@ GET /api/products/d3c3d99c-e221-4371-861b-d61743ffb09e
 ---
 
 ## Endpoints de Merchant
+
+### GET /api/merchant/stores/[storeId]/products/[productId]
+
+Retorna informações detalhadas e completas do produto para o merchant, incluindo histórico de alterações, customizações, listas extras, estatísticas e limites de preço da categoria. Ideal para visualização e edição do produto.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+- `productId` (string, UUID): ID do produto
+
+#### Exemplo de Request
+
+```
+GET /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products/92a30084-b2f1-4d97-9955-0830822d8e34
+```
+
+#### Exemplo de Response (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "product": {
+      "id": "92a30084-b2f1-4d97-9955-0830822d8e34",
+      "store_id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+      "name": "Hambúrguer Artesanal",
+      "description": "Hambúrguer feito com carne artesanal, queijo cheddar, alface, tomate e molho especial",
+      "price": 29.90,
+      "cost_price": 12.50,
+      "family": "finished_product",
+      "image_url": "https://supabase.co/storage/v1/object/public/products/...",
+      "category": "Hambúrgueres",
+      "custom_category": "Gourmet",
+      "is_active": true,
+      "preparation_time": 20,
+      "nutritional_info": {
+        "calories": 650,
+        "protein": 35,
+        "carbs": 45,
+        "fat": 28
+      },
+      "deleted_at": null,
+      "created_at": "2025-12-02T10:00:00Z",
+      "updated_at": "2025-12-02T10:00:00Z"
+    },
+    "store": {
+      "id": "d3c3d99c-e221-4371-861b-d61743ffb09e",
+      "name": "Hamburgueria do João",
+      "slug": "hamburgueria-do-joao",
+      "category": "restaurant"
+    },
+    "customizations": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "name": "Bacon Extra",
+        "customization_type": "topping",
+        "price": 3.50,
+        "selection_type": "boolean",
+        "selection_group": "Adicionais",
+        "created_at": "2025-12-02T10:00:00Z",
+        "updated_at": "2025-12-02T10:00:00Z"
+      }
+    ],
+    "extraLists": [
+      {
+        "id": "660e8400-e29b-41d4-a716-446655440001",
+        "name": "Bebidas Premium",
+        "description": "Bebidas especiais da casa",
+        "applied_at": "2025-12-02T10:00:00Z"
+      }
+    ],
+    "history": [
+      {
+        "id": "770e8400-e29b-41d4-a716-446655440002",
+        "change_type": "updated",
+        "previous_data": {
+          "price": 25.90
+        },
+        "new_data": {
+          "price": 29.90
+        },
+        "changed_fields": ["price"],
+        "note": "Produto atualizado: price",
+        "changed_by": {
+          "id": "880e8400-e29b-41d4-a716-446655440003",
+          "email": "merchant@example.com"
+        },
+        "created_at": "2025-12-02T11:00:00Z"
+      },
+      {
+        "id": "990e8400-e29b-41d4-a716-446655440004",
+        "change_type": "created",
+        "previous_data": null,
+        "new_data": {
+          "id": "92a30084-b2f1-4d97-9955-0830822d8e34",
+          "name": "Hambúrguer Artesanal",
+          "price": 25.90
+        },
+        "changed_fields": ["id", "name", "price", "store_id", "family", "category", "is_active"],
+        "note": "Produto criado",
+        "changed_by": {
+          "id": "880e8400-e29b-41d4-a716-446655440003",
+          "email": "merchant@example.com"
+        },
+        "created_at": "2025-12-02T10:00:00Z"
+      }
+    ],
+    "priceLimit": {
+      "min_price": 15.00,
+      "max_price": 50.00,
+      "is_active": true
+    },
+    "statistics": {
+      "total_orders": 42,
+      "customizations_count": 1,
+      "extra_lists_count": 1
+    }
+  },
+  "timestamp": "2025-12-02T12:00:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem visualizar produtos
+- **403**: Sem permissão para visualizar produtos desta loja
+- **403**: Produto não pertence a esta loja
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **404**: Produto não encontrado
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem visualizar produtos
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Produto deve existir e pertencer à loja especificada
+- ✅ Retorna histórico das últimas 20 alterações
+- ✅ Inclui customizações ativas (não deletadas)
+- ✅ Inclui listas extras aplicadas ao produto
+- ✅ Mostra limites de preço da categoria (se configurado)
+- ✅ Estatísticas incluem total de pedidos com o produto
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
+- ✅ Propriedade da loja validada (verifica se é dono ou membro)
+- ✅ Produto validado como pertencente à loja
+- ✅ `storeId` e `productId` validados como UUID
+
+#### Uso Recomendado
+
+Esta rota é ideal para:
+- **Visualização completa**: Ver todos os detalhes do produto em uma única requisição
+- **Edição**: Obter todos os dados necessários para preencher formulário de edição
+- **Auditoria**: Consultar histórico de alterações do produto
+- **Análise**: Ver estatísticas de uso do produto (pedidos, etc)
+- **Validação**: Verificar limites de preço da categoria antes de editar
+
+---
 
 ### POST /api/merchant/stores/[storeId]/products
 

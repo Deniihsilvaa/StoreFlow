@@ -1368,6 +1368,205 @@ class ProductsService {
 
     return updatedProduct;
   }
+
+  /**
+   * Retorna informações detalhadas do produto para o merchant (com histórico, customizações, etc)
+   * 
+   * @param userId - ID do usuário autenticado (auth_user_id)
+   * @param storeId - ID da loja
+   * @param productId - ID do produto
+   * @returns Dados completos do produto incluindo histórico e informações para edição
+   * @throws ApiError.notFound se o merchant, loja ou produto não forem encontrados
+   * @throws ApiError.forbidden se o merchant não tiver permissão
+   */
+  async getProductForMerchant(userId: string, storeId: string, productId: string) {
+    // 1. Buscar merchant pelo auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: userId,
+        deleted_at: null,
+      },
+      include: {
+        stores: {
+          where: {
+            id: storeId,
+            deleted_at: null,
+          },
+          select: { id: true },
+        },
+        store_merchant_members: {
+          where: {
+            store_id: storeId,
+            deleted_at: null,
+          },
+          select: { store_id: true },
+        },
+      },
+    });
+
+    if (!merchant) {
+      throw ApiError.notFound("Merchant não encontrado", "MERCHANT_NOT_FOUND");
+    }
+
+    // 2. Validar propriedade da loja
+    const isOwner = merchant.stores.some(s => s.id === storeId);
+    const isMember = merchant.store_merchant_members.some(m => m.store_id === storeId);
+
+    if (!isOwner && !isMember) {
+      throw ApiError.forbidden("Você não tem permissão para visualizar produtos desta loja");
+    }
+
+    // 3. Buscar produto completo
+    const product = await prisma.products.findUnique({
+      where: { id: productId },
+      include: {
+        product_customizations: {
+          where: { deleted_at: null },
+          orderBy: { created_at: 'asc' },
+        },
+        product_extra_list_applicability: {
+          where: {
+            product_extra_lists: {
+              deleted_at: null,
+            },
+          },
+          include: {
+            product_extra_lists: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+              },
+            },
+          },
+        },
+        stores: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            category: true,
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (product.deleted_at) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (product.store_id !== storeId) {
+      throw ApiError.forbidden("Produto não pertence a esta loja");
+    }
+
+    // 4. Buscar histórico de alterações (últimas 20)
+    const history = await prisma.product_history.findMany({
+      where: { product_id: productId },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      include: {
+        users: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // 5. Buscar limites de preço da categoria (se houver)
+    const priceLimit = await prisma.product_category_price_limits.findUnique({
+      where: {
+        store_id_category: {
+          store_id: storeId,
+          category: product.category,
+        },
+        is_active: true,
+        deleted_at: null,
+      },
+    });
+
+    // 6. Buscar estatísticas básicas (pedidos com este produto)
+    const ordersCount = await (prisma as any).$queryRawUnsafe(
+      `
+      SELECT COUNT(*)::bigint as count
+      FROM orders.orders o
+      INNER JOIN orders.order_items oi ON o.id = oi.order_id
+      WHERE oi.product_id = $1::uuid
+        AND o.deleted_at IS NULL
+        AND oi.deleted_at IS NULL
+      `,
+      productId
+    ) as Array<{ count: bigint }>;
+
+    const totalOrders = Number(ordersCount[0]?.count ?? 0);
+
+    // 7. Montar resposta completa
+    return {
+      product: {
+        id: product.id,
+        store_id: product.store_id,
+        name: product.name,
+        description: product.description,
+        price: Number(product.price),
+        cost_price: Number(product.cost_price),
+        family: product.family,
+        image_url: product.image_url,
+        category: product.category,
+        custom_category: product.custom_category,
+        is_active: product.is_active,
+        preparation_time: product.preparation_time,
+        nutritional_info: product.nutritional_info,
+        deleted_at: product.deleted_at,
+        created_at: product.created_at,
+        updated_at: product.updated_at,
+      },
+      store: product.stores,
+      customizations: product.product_customizations.map(c => ({
+        id: c.id,
+        name: c.name,
+        customization_type: c.customization_type,
+        price: Number(c.price),
+        selection_type: c.selection_type,
+        selection_group: c.selection_group,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+      })),
+      extraLists: product.product_extra_list_applicability.map(a => ({
+        id: a.product_extra_lists.id,
+        name: a.product_extra_lists.name,
+        description: a.product_extra_lists.description,
+        applied_at: a.created_at,
+      })),
+      history: history.map(h => ({
+        id: h.id,
+        change_type: h.change_type,
+        previous_data: h.previous_data,
+        new_data: h.new_data,
+        changed_fields: h.changed_fields,
+        note: h.note,
+        changed_by: h.users ? {
+          id: h.users.id,
+          email: h.users.email,
+        } : null,
+        created_at: h.created_at,
+      })),
+      priceLimit: priceLimit ? {
+        min_price: priceLimit.min_price ? Number(priceLimit.min_price) : null,
+        max_price: priceLimit.max_price ? Number(priceLimit.max_price) : null,
+        is_active: priceLimit.is_active,
+      } : null,
+      statistics: {
+        total_orders: totalOrders,
+        customizations_count: product.product_customizations.length,
+        extra_lists_count: product.product_extra_list_applicability.length,
+      },
+    };
+  }
 }
 
 export const productsService = new ProductsService();

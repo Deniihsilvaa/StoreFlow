@@ -305,3 +305,28 @@ export async function removeCustomization(
   return ApiResponse.success(product, { request });
 }
 
+export async function getProductForMerchant(
+  userId: string,
+  storeId: string,
+  productId: string,
+  request?: NextRequest,
+) {
+  // Validar formato UUID do storeId e productId
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(storeId)) {
+    throw ApiError.validation(
+      { storeId: ["Formato de storeId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+  if (!uuidRegex.test(productId)) {
+    throw ApiError.validation(
+      { productId: ["Formato de productId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+
+  const productData = await productsService.getProductForMerchant(userId, storeId, productId);
+  return ApiResponse.success(productData, { request });
+}
+
