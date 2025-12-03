@@ -16,6 +16,8 @@ Endpoints para consultar e gerenciar produtos do sistema.
 - ✅ `PATCH /api/merchant/stores/[storeId]/products/[productId]/deactivate` - Desativar produto (merchant)
 - ✅ `PATCH /api/merchant/stores/[storeId]/products/[productId]/activate` - Ativar produto (merchant)
 - ✅ `POST /api/merchant/stores/[storeId]/products/[productId]/upload` - Upload de imagem do produto (merchant)
+- ✅ `POST /api/merchant/stores/[storeId]/products/[productId]/customizations` - Adicionar customização ao produto (merchant)
+- ✅ `DELETE /api/merchant/stores/[storeId]/products/[productId]/customizations/[customizationId]` - Remover customização do produto (merchant)
 
 ## Endpoints
 
@@ -1093,6 +1095,191 @@ store-assets/
 - ✅ Recomenda-se usar formatos otimizados (WebP) para melhor performance
 - ✅ Imagens são armazenadas com cache de 1 hora (`cacheControl: "3600"`)
 - ✅ Nomes de arquivo são sanitizados automaticamente (remove acentos e caracteres especiais)
+
+---
+
+### POST /api/merchant/stores/[storeId]/products/[productId]/customizations
+
+Adiciona uma nova customização a um produto existente.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+- `productId` (string, UUID): ID do produto
+
+#### Body Parameters
+
+```json
+{
+  "name": "string (mínimo 1, máximo 100 caracteres)",
+  "customizationType": "extra | sauce | base | protein | topping",
+  "price": "number (mínimo 0, padrão: 0)",
+  "selectionType": "quantity | boolean (padrão: quantity)",
+  "selectionGroup"?: "string (máximo 50 caracteres)"
+}
+```
+
+#### Exemplo de Request
+
+```json
+{
+  "name": "Bacon Crocante",
+  "customizationType": "topping",
+  "price": 4.50,
+  "selectionType": "boolean",
+  "selectionGroup": "Adicionais Premium"
+}
+```
+
+#### Exemplo de Response (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "customization": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "product_id": "92a30084-b2f1-4d97-9955-0830822d8e34",
+      "name": "Bacon Crocante",
+      "customization_type": "topping",
+      "price": 4.50,
+      "selection_type": "boolean",
+      "selection_group": "Adicionais Premium",
+      "deleted_at": null,
+      "created_at": "2025-12-02T13:00:00Z",
+      "updated_at": "2025-12-02T13:00:00Z"
+    },
+    "product": {
+      "id": "92a30084-b2f1-4d97-9955-0830822d8e34",
+      "name": "Hambúrguer Artesanal",
+      "customizations_count": 4,
+      "available_customizations": null
+    }
+  },
+  "timestamp": "2025-12-02T13:00:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **400**: Content-Type inválido (deve ser `application/json`)
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem gerenciar customizações
+- **403**: Sem permissão para gerenciar customizações nesta loja
+- **403**: Produto não pertence a esta loja
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **404**: Produto não encontrado
+- **422**: Dados inválidos (campos obrigatórios ausentes, formato inválido)
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem adicionar customizações
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Produto deve existir e pertencer à loja especificada
+- ✅ `customizationType` deve ser um dos valores: `extra`, `sauce`, `base`, `protein`, `topping`
+- ✅ `selectionType` deve ser `quantity` ou `boolean`
+- ✅ Customização é criada imediatamente e vinculada ao produto
+
+---
+
+### DELETE /api/merchant/stores/[storeId]/products/[productId]/customizations/[customizationId]
+
+Remove uma customização de um produto usando soft delete. A customização não pode estar em uso em pedidos ativos.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+- `productId` (string, UUID): ID do produto
+- `customizationId` (string, UUID): ID da customização a ser removida
+
+#### Exemplo de Request
+
+```
+DELETE /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products/92a30084-b2f1-4d97-9955-0830822d8e34/customizations/550e8400-e29b-41d4-a716-446655440000
+```
+
+#### Exemplo de Response (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "92a30084-b2f1-4d97-9955-0830822d8e34",
+    "name": "Hambúrguer Artesanal",
+    "customizations_count": 3,
+    "available_customizations": null
+  },
+  "timestamp": "2025-12-02T13:30:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem remover customizações
+- **403**: Sem permissão para gerenciar customizações nesta loja
+- **403**: Produto não pertence a esta loja
+- **403**: Customização não pertence a este produto
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **404**: Produto não encontrado
+- **404**: Customização não encontrada
+- **422**: Customização está em uso em pedidos ativos
+
+#### Exemplo de Erro 422 (Customização em Pedidos Ativos)
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Customização em uso em pedidos ativos",
+    "code": "VALIDATION_ERROR",
+    "status": 422,
+    "details": {
+      "customizationId": [
+        "Não é possível remover a customização. Ela está presente em 2 pedido(s) ativo(s)."
+      ]
+    },
+    "timestamp": "2025-12-02T13:30:00Z"
+  }
+}
+```
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem remover customizações
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Produto deve existir e pertencer à loja especificada
+- ✅ Customização deve existir e pertencer ao produto
+- ✅ **Validação crítica**: Customização não pode estar em pedidos ativos
+  - Pedidos ativos: `pending`, `confirmed`, `preparing`, `ready`, `out_for_delivery`
+  - Pedidos inativos (permitem remoção): `delivered`, `cancelled`, `refunded`
+- ✅ Soft delete: customização não é removida fisicamente, apenas marcada com `deleted_at`
+- ✅ Customização removida não aparece mais nas opções do produto
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
+- ✅ Propriedade da loja validada (verifica se é dono ou membro)
+- ✅ Produto validado como pertencente à loja
+- ✅ Customização validada como pertencente ao produto
+- ✅ `storeId`, `productId` e `customizationId` validados como UUID
+- ✅ Validação de pedidos ativos antes da remoção
 
 ---
 

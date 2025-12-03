@@ -6,6 +6,7 @@ import { parsePagination } from "@/core/utils/pagination";
 import { productsService } from "../service/products.service";
 import { createProductSchema } from "../dto/create-product.dto";
 import { updateProductSchema } from "../dto/update-product.dto";
+import { addCustomizationSchema } from "../dto/add-customization.dto";
 import { storageService } from "@/modules/storage/service/storage.service";
 
 export async function listProducts(request: NextRequest) {
@@ -235,6 +236,72 @@ export async function deleteProduct(
   }
 
   const product = await productsService.deleteProduct(userId, storeId, productId);
+  return ApiResponse.success(product, { request });
+}
+
+export async function addCustomization(
+  userId: string,
+  storeId: string,
+  productId: string,
+  body: unknown,
+  request?: NextRequest,
+) {
+  // Validar dados com Zod
+  let payload;
+  try {
+    payload = addCustomizationSchema.parse(body);
+  } catch (error) {
+    throw error;
+  }
+
+  // Validar formato UUID do storeId e productId
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(storeId)) {
+    throw ApiError.validation(
+      { storeId: ["Formato de storeId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+  if (!uuidRegex.test(productId)) {
+    throw ApiError.validation(
+      { productId: ["Formato de productId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+
+  const result = await productsService.addCustomization(userId, storeId, productId, payload);
+  return ApiResponse.success(result, { request });
+}
+
+export async function removeCustomization(
+  userId: string,
+  storeId: string,
+  productId: string,
+  customizationId: string,
+  request?: NextRequest,
+) {
+  // Validar formato UUID do storeId, productId e customizationId
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(storeId)) {
+    throw ApiError.validation(
+      { storeId: ["Formato de storeId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+  if (!uuidRegex.test(productId)) {
+    throw ApiError.validation(
+      { productId: ["Formato de productId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+  if (!uuidRegex.test(customizationId)) {
+    throw ApiError.validation(
+      { customizationId: ["Formato de customizationId inválido"] },
+      "Parâmetros inválidos",
+    );
+  }
+
+  const product = await productsService.removeCustomization(userId, storeId, productId, customizationId);
   return ApiResponse.success(product, { request });
 }
 

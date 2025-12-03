@@ -395,6 +395,7 @@ model users {
   one_time_tokens             one_time_tokens[]
   sessions                    sessions[]
   order_status_history        order_status_history[]
+  product_history             product_history[]
   customers                   customers?
   merchants                   merchants?
 
@@ -543,8 +544,45 @@ model products {
   order_items                      order_items[]
   product_customizations           product_customizations[]
   product_extra_list_applicability product_extra_list_applicability[]
+  product_history                  product_history[]
   stores                           stores                             @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@schema("public")
+}
+
+model product_history {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id        String    @db.Uuid
+  changed_by        String?   @db.Uuid
+  change_type       String    // 'created', 'updated', 'deleted', 'activated', 'deactivated'
+  previous_data     Json?     @db.Json
+  new_data          Json      @db.Json
+  changed_fields    String[]  // Array de campos que foram alterados
+  note              String?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  products          products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users?    @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([product_id], map: "product_history_product_idx")
+  @@index([changed_by], map: "product_history_changed_by_idx")
+  @@index([created_at(sort: Desc)], map: "product_history_created_at_idx")
+  @@schema("public")
+}
+
+model product_category_price_limits {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  store_id    String    @db.Uuid
+  category    String    // Categoria do produto
+  min_price   Decimal?  @db.Decimal(10, 2)
+  max_price   Decimal?  @db.Decimal(10, 2)
+  is_active   Boolean   @default(true)
+  deleted_at  DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  stores      stores    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([store_id, category], map: "unique_category_price_limit_per_store")
+  @@index([store_id], map: "product_category_price_limits_store_idx")
   @@schema("public")
 }
 
@@ -663,6 +701,7 @@ model stores {
   store_delivery_options          store_delivery_options[]
   store_merchant_members          store_merchant_members[]
   store_working_hours             store_working_hours[]
+  product_category_price_limits   product_category_price_limits[]
   merchants                       merchants                @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")

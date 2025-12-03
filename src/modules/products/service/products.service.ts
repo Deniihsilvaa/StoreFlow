@@ -5,6 +5,7 @@ import { ApiError } from "@/core/errors/ApiError";
 import type { PaginationQuery } from "@/shared/types/pagination";
 import type { CreateProductInput } from "../dto/create-product.dto";
 import type { UpdateProductInput } from "../dto/update-product.dto";
+import type { AddCustomizationInput } from "../dto/add-customization.dto";
 
 export type ProductEnriched = {
   id: string;
@@ -39,6 +40,85 @@ export type ProductsListParams = {
 };
 
 class ProductsService {
+  /**
+   * Valida se o preço do produto está dentro dos limites permitidos para a categoria
+   * @param storeId - ID da loja
+   * @param category - Categoria do produto
+   * @param price - Preço a ser validado
+   * @throws ApiError.validation se o preço estiver fora dos limites
+   */
+  private async validatePriceByCategory(storeId: string, category: string, price: number) {
+    const priceLimit = await prisma.product_category_price_limits.findUnique({
+      where: {
+        store_id_category: {
+          store_id: storeId,
+          category: category,
+        },
+        is_active: true,
+        deleted_at: null,
+      },
+    });
+
+    if (!priceLimit) {
+      // Se não houver limite configurado, permite qualquer preço
+      return;
+    }
+
+    if (priceLimit.min_price !== null && price < Number(priceLimit.min_price)) {
+      throw ApiError.validation(
+        { 
+          price: [
+            `O preço mínimo para a categoria "${category}" é R$ ${Number(priceLimit.min_price).toFixed(2)}`
+          ] 
+        },
+        "Preço abaixo do mínimo permitido para esta categoria"
+      );
+    }
+
+    if (priceLimit.max_price !== null && price > Number(priceLimit.max_price)) {
+      throw ApiError.validation(
+        { 
+          price: [
+            `O preço máximo para a categoria "${category}" é R$ ${Number(priceLimit.max_price).toFixed(2)}`
+          ] 
+        },
+        "Preço acima do máximo permitido para esta categoria"
+      );
+    }
+  }
+
+  /**
+   * Cria um registro de histórico de alteração do produto
+   * @param productId - ID do produto
+   * @param userId - ID do usuário que fez a alteração
+   * @param changeType - Tipo de alteração ('created', 'updated', 'deleted', 'activated', 'deactivated')
+   * @param previousData - Dados anteriores (null para criação)
+   * @param newData - Dados novos
+   * @param changedFields - Array de campos que foram alterados
+   * @param note - Nota opcional sobre a alteração
+   */
+  private async createProductHistory(
+    productId: string,
+    userId: string | null,
+    changeType: 'created' | 'updated' | 'deleted' | 'activated' | 'deactivated',
+    previousData: Record<string, unknown> | null,
+    newData: Record<string, unknown>,
+    changedFields: string[],
+    note?: string,
+  ) {
+    await prisma.product_history.create({
+      data: {
+        product_id: productId,
+        changed_by: userId,
+        change_type: changeType,
+        previous_data: previousData as Prisma.InputJsonValue | null,
+        new_data: newData as Prisma.InputJsonValue,
+        changed_fields: changedFields,
+        note: note || null,
+      },
+    });
+  }
+
   async listProducts(
     params: ProductsListParams,
     pagination: PaginationQuery,
@@ -255,7 +335,10 @@ class ProductsService {
       throw ApiError.notFound("Loja não encontrada", "STORE_NOT_FOUND");
     }
 
-    // 4. Validar listas extras se fornecidas
+    // 4. Validar preço por categoria
+    await this.validatePriceByCategory(storeId, input.category, input.price);
+
+    // 5. Validar listas extras se fornecidas
     if (input.extraListIds && input.extraListIds.length > 0) {
       const extraLists = await prisma.product_extra_lists.findMany({
         where: {
@@ -274,9 +357,9 @@ class ProductsService {
       }
     }
 
-    // 5. Criar produto usando transação para garantir consistência
-    const product = await prisma.$transaction(async (tx) => {
-      // 5.1. Criar produto
+    // 6. Criar produto usando transação para garantir consistência
+    const newProduct = await prisma.$transaction(async (tx) => {
+      // 6.1. Criar produto
       const newProduct = await tx.products.create({
         data: {
           store_id: storeId,
@@ -294,7 +377,36 @@ class ProductsService {
         },
       });
 
-      // 5.2. Criar customizações se fornecidas
+      // 6.1.1. Criar histórico de criação
+      const productData = {
+        id: newProduct.id,
+        store_id: newProduct.store_id,
+        name: newProduct.name,
+        description: newProduct.description,
+        price: Number(newProduct.price),
+        cost_price: Number(newProduct.cost_price),
+        family: newProduct.family,
+        image_url: newProduct.image_url,
+        category: newProduct.category,
+        custom_category: newProduct.custom_category,
+        is_active: newProduct.is_active,
+        preparation_time: newProduct.preparation_time,
+        nutritional_info: newProduct.nutritional_info,
+      };
+
+      await tx.product_history.create({
+        data: {
+          product_id: newProduct.id,
+          changed_by: userId,
+          change_type: 'created',
+          previous_data: null,
+          new_data: productData as Prisma.InputJsonValue,
+          changed_fields: Object.keys(productData),
+          note: 'Produto criado',
+        },
+      });
+
+      // 6.2. Criar customizações se fornecidas
       if (input.customizations && input.customizations.length > 0) {
         await tx.product_customizations.createMany({
           data: input.customizations.map((customization) => ({
@@ -321,8 +433,8 @@ class ProductsService {
       return newProduct;
     });
 
-    // 6. Buscar produto criado completo (usando a view enriquecida)
-    const createdProduct = await this.getProductById(product.id);
+    // 7. Buscar produto criado completo (usando a view enriquecida)
+    const createdProduct = await this.getProductById(newProduct.id);
 
     if (!createdProduct) {
       throw ApiError.notFound("Erro ao buscar produto criado", "PRODUCT_NOT_FOUND");
@@ -402,7 +514,12 @@ class ProductsService {
       throw ApiError.forbidden("Produto não pertence a esta loja");
     }
 
-    // 4. Validar listas extras se fornecidas
+    // 4. Validar preço por categoria se o preço ou categoria foram alterados
+    const categoryToValidate = input.category ?? existingProduct.category;
+    const priceToValidate = input.price ?? Number(existingProduct.price);
+    await this.validatePriceByCategory(storeId, categoryToValidate, priceToValidate);
+
+    // 5. Validar listas extras se fornecidas
     if (input.extraListIds && input.extraListIds.length > 0) {
       const extraLists = await prisma.product_extra_lists.findMany({
         where: {
@@ -519,11 +636,72 @@ class ProductsService {
           : Prisma.JsonNull;
       }
 
-      // 6.2. Atualizar produto
-      await tx.products.update({
+      // 7.2. Atualizar produto
+      const updated = await tx.products.update({
         where: { id: productId },
         data: productUpdateData,
+        select: {
+          id: true,
+          store_id: true,
+          name: true,
+          description: true,
+          price: true,
+          cost_price: true,
+          family: true,
+          image_url: true,
+          category: true,
+          custom_category: true,
+          is_active: true,
+          preparation_time: true,
+          nutritional_info: true,
+        },
       });
+
+      // 7.2.1. Criar histórico de atualização
+      const changedFields: string[] = [];
+      if (input.name !== undefined) changedFields.push('name');
+      if (input.description !== undefined) changedFields.push('description');
+      if (input.price !== undefined) changedFields.push('price');
+      if (input.costPrice !== undefined) changedFields.push('cost_price');
+      if (input.family !== undefined) changedFields.push('family');
+      if (input.imageUrl !== undefined) changedFields.push('image_url');
+      if (input.category !== undefined) changedFields.push('category');
+      if (input.customCategory !== undefined) changedFields.push('custom_category');
+      if (input.isActive !== undefined) changedFields.push('is_active');
+      if (input.preparationTime !== undefined) changedFields.push('preparation_time');
+      if (input.nutritionalInfo !== undefined) changedFields.push('nutritional_info');
+
+      if (changedFields.length > 0) {
+        const newData = {
+          id: updated.id,
+          store_id: updated.store_id,
+          name: updated.name,
+          description: updated.description,
+          price: Number(updated.price),
+          cost_price: Number(updated.cost_price),
+          family: updated.family,
+          image_url: updated.image_url,
+          category: updated.category,
+          custom_category: updated.custom_category,
+          is_active: updated.is_active,
+          preparation_time: updated.preparation_time,
+          nutritional_info: updated.nutritional_info,
+        };
+
+        await tx.product_history.create({
+          data: {
+            product_id: productId,
+            changed_by: userId,
+            change_type: 'updated',
+            previous_data: previousData as Prisma.InputJsonValue,
+            new_data: newData as Prisma.InputJsonValue,
+            changed_fields: changedFields,
+            note: `Produto atualizado: ${changedFields.join(', ')}`,
+          },
+        });
+      }
+
+      return updated;
 
       // 6.3. Gerenciar customizações
       if (input.customizations) {
@@ -673,16 +851,48 @@ class ProductsService {
       throw ApiError.forbidden("Produto não pertence a esta loja");
     }
 
-    // 4. Desativar produto
-    await prisma.products.update({
-      where: { id: productId },
-      data: {
-        is_active: false,
-        updated_at: new Date(),
-      },
+    // 4. Preparar dados para histórico
+    const previousData = {
+      id: existingProduct.id,
+      store_id: existingProduct.store_id,
+      name: existingProduct.name,
+      description: existingProduct.description,
+      price: Number(existingProduct.price),
+      cost_price: Number(existingProduct.cost_price),
+      family: existingProduct.family,
+      image_url: existingProduct.image_url,
+      category: existingProduct.category,
+      custom_category: existingProduct.custom_category,
+      is_active: existingProduct.is_active,
+      preparation_time: existingProduct.preparation_time,
+      nutritional_info: existingProduct.nutritional_info,
+    };
+
+    // 5. Desativar produto e criar histórico
+    await prisma.$transaction(async (tx) => {
+      await tx.products.update({
+        where: { id: productId },
+        data: {
+          is_active: false,
+          updated_at: new Date(),
+        },
+      });
+
+      const newData = { ...previousData, is_active: false };
+      await tx.product_history.create({
+        data: {
+          product_id: productId,
+          changed_by: userId,
+          change_type: 'deactivated',
+          previous_data: previousData as Prisma.InputJsonValue,
+          new_data: newData as Prisma.InputJsonValue,
+          changed_fields: ['is_active'],
+          note: 'Produto desativado',
+        },
+      });
     });
 
-    // 5. Buscar produto atualizado
+    // 6. Buscar produto atualizado
     const deactivatedProduct = await this.getProductById(productId);
 
     if (!deactivatedProduct) {
@@ -854,7 +1064,7 @@ class ProductsService {
     // 4. Verificar se o produto está em pedidos ativos
     // Pedidos ativos: pending, confirmed, preparing, ready, out_for_delivery
     // Pedidos inativos: delivered, cancelled, refunded
-    const activeOrdersCount = await (prisma as any).$queryRawUnsafe<Array<{ count: bigint }>>(
+    const activeOrdersCount = await (prisma as any).$queryRawUnsafe(
       `
       SELECT COUNT(*)::bigint as count
       FROM orders.orders o
@@ -865,7 +1075,7 @@ class ProductsService {
         AND oi.deleted_at IS NULL
       `,
       productId
-    );
+    ) as Array<{ count: bigint }>;
 
     const count = Number(activeOrdersCount[0]?.count ?? 0);
 
@@ -919,6 +1129,244 @@ class ProductsService {
     }
 
     return deletedProduct;
+  }
+
+  /**
+   * Adiciona uma customização a um produto existente
+   * 
+   * @param userId - ID do usuário autenticado (auth_user_id)
+   * @param storeId - ID da loja
+   * @param productId - ID do produto
+   * @param input - Dados da customização
+   * @returns Produto atualizado com a nova customização
+   * @throws ApiError.notFound se o merchant, loja ou produto não forem encontrados
+   * @throws ApiError.forbidden se o merchant não tiver permissão
+   */
+  async addCustomization(userId: string, storeId: string, productId: string, input: AddCustomizationInput) {
+    // 1. Buscar merchant pelo auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: userId,
+        deleted_at: null,
+      },
+      include: {
+        stores: {
+          where: {
+            id: storeId,
+            deleted_at: null,
+          },
+          select: { id: true },
+        },
+        store_merchant_members: {
+          where: {
+            store_id: storeId,
+            deleted_at: null,
+          },
+          select: { store_id: true },
+        },
+      },
+    });
+
+    if (!merchant) {
+      throw ApiError.notFound("Merchant não encontrado", "MERCHANT_NOT_FOUND");
+    }
+
+    // 2. Validar propriedade da loja
+    const isOwner = merchant.stores.some(s => s.id === storeId);
+    const isMember = merchant.store_merchant_members.some(m => m.store_id === storeId);
+
+    if (!isOwner && !isMember) {
+      throw ApiError.forbidden("Você não tem permissão para gerenciar customizações nesta loja");
+    }
+
+    // 3. Verificar se o produto existe e pertence à loja
+    const existingProduct = await prisma.products.findUnique({
+      where: { id: productId },
+      select: { 
+        id: true, 
+        store_id: true, 
+        deleted_at: true,
+      },
+    });
+
+    if (!existingProduct) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (existingProduct.deleted_at) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (existingProduct.store_id !== storeId) {
+      throw ApiError.forbidden("Produto não pertence a esta loja");
+    }
+
+    // 4. Criar customização
+    const customization = await prisma.product_customizations.create({
+      data: {
+        product_id: productId,
+        name: input.name,
+        customization_type: input.customizationType,
+        price: input.price,
+        selection_type: input.selectionType,
+        selection_group: input.selectionGroup || null,
+      },
+    });
+
+    // 5. Buscar produto atualizado
+    const updatedProduct = await this.getProductById(productId);
+
+    if (!updatedProduct) {
+      throw ApiError.notFound("Erro ao buscar produto atualizado", "PRODUCT_NOT_FOUND");
+    }
+
+    return {
+      customization,
+      product: updatedProduct,
+    };
+  }
+
+  /**
+   * Remove uma customização de um produto (soft delete)
+   * Valida se a customização não está em uso em pedidos ativos
+   * 
+   * @param userId - ID do usuário autenticado (auth_user_id)
+   * @param storeId - ID da loja
+   * @param productId - ID do produto
+   * @param customizationId - ID da customização a ser removida
+   * @returns Produto atualizado
+   * @throws ApiError.notFound se o merchant, loja, produto ou customização não forem encontrados
+   * @throws ApiError.forbidden se o merchant não tiver permissão
+   * @throws ApiError.validation se a customização estiver em uso em pedidos ativos
+   */
+  async removeCustomization(userId: string, storeId: string, productId: string, customizationId: string) {
+    // 1. Buscar merchant pelo auth_user_id
+    const merchant = await prisma.merchants.findFirst({
+      where: {
+        auth_user_id: userId,
+        deleted_at: null,
+      },
+      include: {
+        stores: {
+          where: {
+            id: storeId,
+            deleted_at: null,
+          },
+          select: { id: true },
+        },
+        store_merchant_members: {
+          where: {
+            store_id: storeId,
+            deleted_at: null,
+          },
+          select: { store_id: true },
+        },
+      },
+    });
+
+    if (!merchant) {
+      throw ApiError.notFound("Merchant não encontrado", "MERCHANT_NOT_FOUND");
+    }
+
+    // 2. Validar propriedade da loja
+    const isOwner = merchant.stores.some(s => s.id === storeId);
+    const isMember = merchant.store_merchant_members.some(m => m.store_id === storeId);
+
+    if (!isOwner && !isMember) {
+      throw ApiError.forbidden("Você não tem permissão para gerenciar customizações nesta loja");
+    }
+
+    // 3. Verificar se o produto existe e pertence à loja
+    const existingProduct = await prisma.products.findUnique({
+      where: { id: productId },
+      select: { 
+        id: true, 
+        store_id: true, 
+        deleted_at: true,
+      },
+    });
+
+    if (!existingProduct) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (existingProduct.deleted_at) {
+      throw ApiError.notFound("Produto não encontrado", "PRODUCT_NOT_FOUND");
+    }
+
+    if (existingProduct.store_id !== storeId) {
+      throw ApiError.forbidden("Produto não pertence a esta loja");
+    }
+
+    // 4. Verificar se a customização existe e pertence ao produto
+    const existingCustomization = await prisma.product_customizations.findUnique({
+      where: { id: customizationId },
+      select: { 
+        id: true, 
+        product_id: true, 
+        deleted_at: true,
+      },
+    });
+
+    if (!existingCustomization) {
+      throw ApiError.notFound("Customização não encontrada", "CUSTOMIZATION_NOT_FOUND");
+    }
+
+    if (existingCustomization.deleted_at) {
+      throw ApiError.notFound("Customização não encontrada", "CUSTOMIZATION_NOT_FOUND");
+    }
+
+    if (existingCustomization.product_id !== productId) {
+      throw ApiError.forbidden("Customização não pertence a este produto");
+    }
+
+    // 5. Verificar se a customização está em uso em pedidos ativos
+    // Pedidos ativos: pending, confirmed, preparing, ready, out_for_delivery
+    const activeOrdersCount = await (prisma as any).$queryRawUnsafe(
+      `
+      SELECT COUNT(*)::bigint as count
+      FROM orders.orders o
+      INNER JOIN orders.order_items oi ON o.id = oi.order_id
+      INNER JOIN orders.order_item_customizations oic ON oi.id = oic.order_item_id
+      WHERE oic.customization_id = $1::uuid
+        AND o.status IN ('pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery')
+        AND o.deleted_at IS NULL
+        AND oi.deleted_at IS NULL
+        AND oic.deleted_at IS NULL
+      `,
+      customizationId
+    ) as Array<{ count: bigint }>;
+
+    const count = Number(activeOrdersCount[0]?.count ?? 0);
+
+    if (count > 0) {
+      throw ApiError.validation(
+        { 
+          customizationId: [
+            `Não é possível remover a customização. Ela está presente em ${count} pedido(s) ativo(s).`
+          ] 
+        },
+        "Customização em uso em pedidos ativos"
+      );
+    }
+
+    // 6. Remover customização (soft delete)
+    await prisma.product_customizations.update({
+      where: { id: customizationId },
+      data: {
+        deleted_at: new Date(),
+        updated_at: new Date(),
+      },
+    });
+
+    // 7. Buscar produto atualizado
+    const updatedProduct = await this.getProductById(productId);
+
+    if (!updatedProduct) {
+      throw ApiError.notFound("Erro ao buscar produto atualizado", "PRODUCT_NOT_FOUND");
+    }
+
+    return updatedProduct;
   }
 }
 
