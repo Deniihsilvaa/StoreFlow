@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  schemas   = ["auth", "orders", "permissions", "public", "views"]
+  schemas   = ["auth", "orders", "permissions", "public", "storage", "views"]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -395,9 +395,9 @@ model users {
   one_time_tokens             one_time_tokens[]
   sessions                    sessions[]
   order_status_history        order_status_history[]
-  product_history             product_history[]
   customers                   customers?
   merchants                   merchants?
+  product_history             product_history[]
 
   @@index([instance_id])
   @@index([is_anonymous])
@@ -452,6 +452,7 @@ model merchants {
   deleted_at             DateTime?                @db.Timestamptz(6)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  type                   String?                  @default("merchant")
   merchant_agreements    merchant_agreements[]
   users                  users                    @relation(fields: [auth_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   store_merchant_members store_merchant_members[]
@@ -551,35 +552,35 @@ model products {
 }
 
 model product_history {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  product_id        String    @db.Uuid
-  changed_by        String?   @db.Uuid
-  change_type       String    // 'created', 'updated', 'deleted', 'activated', 'deactivated'
-  previous_data     Json?     @db.Json
-  new_data          Json      @db.Json
-  changed_fields    String[]  // Array de campos que foram alterados
-  note              String?
-  created_at        DateTime  @default(now()) @db.Timestamptz(6)
-  products          products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users             users?    @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id     String   @db.Uuid
+  changed_by     String?  @db.Uuid
+  change_type    String
+  previous_data  Json?
+  new_data       Json
+  changed_fields String[]
+  note           String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  users          users?   @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products       products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([product_id], map: "product_history_product_idx")
-  @@index([changed_by], map: "product_history_changed_by_idx")
-  @@index([created_at(sort: Desc)], map: "product_history_created_at_idx")
+  @@index([changed_by])
+  @@index([created_at(sort: Desc)])
   @@schema("public")
 }
 
 model product_category_price_limits {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  store_id    String    @db.Uuid
-  category    String    // Categoria do produto
-  min_price   Decimal?  @db.Decimal(10, 2)
-  max_price   Decimal?  @db.Decimal(10, 2)
-  is_active   Boolean   @default(true)
-  deleted_at  DateTime? @db.Timestamptz(6)
-  created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
-  stores      stores    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  store_id   String    @db.Uuid
+  category   String
+  min_price  Decimal?  @db.Decimal(10, 2)
+  max_price  Decimal?  @db.Decimal(10, 2)
+  is_active  Boolean   @default(true)
+  deleted_at DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  stores     stores    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([store_id, category], map: "unique_category_price_limit_per_store")
   @@index([store_id], map: "product_category_price_limits_store_idx")
@@ -659,50 +660,50 @@ model store_working_hours {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model stores {
-  id                              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  merchant_id                     String                   @db.Uuid
+  id                              String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchant_id                     String                          @db.Uuid
   name                            String
-  slug                            String                   @unique
+  slug                            String                          @unique
   description                     String?
   category                        store_category_enum
   custom_category                 String?
   avatar_url                      String?
   banner_url                      String?
-  rating                          Decimal                  @default(0) @db.Decimal(3, 2)
-  review_count                    Int                      @default(0)
-  primary_color                   String                   @default("#FF5733")
-  secondary_color                 String                   @default("#33FF57")
-  accent_color                    String                   @default("#3357FF")
+  rating                          Decimal                         @default(0) @db.Decimal(3, 2)
+  review_count                    Int                             @default(0)
+  primary_color                   String                          @default("#FF5733")
+  secondary_color                 String                          @default("#33FF57")
+  accent_color                    String                          @default("#3357FF")
   text_color                      String?
-  is_active                       Boolean                  @default(true)
+  is_active                       Boolean                         @default(true)
   delivery_time                   String?
-  min_order_value                 Decimal                  @default(0) @db.Decimal(10, 2)
-  delivery_fee                    Decimal                  @default(0) @db.Decimal(10, 2)
-  free_delivery_above             Decimal?                 @db.Decimal(10, 2)
-  accepts_payment_credit_card     Boolean                  @default(true)
-  accepts_payment_debit_card      Boolean                  @default(true)
-  accepts_payment_pix             Boolean                  @default(true)
-  accepts_payment_cash            Boolean                  @default(true)
-  fulfillment_delivery_enabled    Boolean                  @default(true)
-  fulfillment_pickup_enabled      Boolean                  @default(true)
+  min_order_value                 Decimal                         @default(0) @db.Decimal(10, 2)
+  delivery_fee                    Decimal                         @default(0) @db.Decimal(10, 2)
+  free_delivery_above             Decimal?                        @db.Decimal(10, 2)
+  accepts_payment_credit_card     Boolean                         @default(true)
+  accepts_payment_debit_card      Boolean                         @default(true)
+  accepts_payment_pix             Boolean                         @default(true)
+  accepts_payment_cash            Boolean                         @default(true)
+  fulfillment_delivery_enabled    Boolean                         @default(true)
+  fulfillment_pickup_enabled      Boolean                         @default(true)
   fulfillment_pickup_instructions String?
-  deleted_at                      DateTime?                @db.Timestamptz(6)
-  created_at                      DateTime                 @default(now()) @db.Timestamptz(6)
-  updated_at                      DateTime                 @default(now()) @db.Timestamptz(6)
+  deleted_at                      DateTime?                       @db.Timestamptz(6)
+  created_at                      DateTime                        @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime                        @default(now()) @db.Timestamptz(6)
   legal_responsible_name          String?
   legal_responsible_document      String?
-  terms_accepted_at               DateTime?                @db.Timestamptz(6)
+  terms_accepted_at               DateTime?                       @db.Timestamptz(6)
   orders                          orders[]
   permission_profiles             permission_profiles[]
   store_costumer                  store_costumer[]
+  product_category_price_limits   product_category_price_limits[]
   product_extra_lists             product_extra_lists[]
   products                        products[]
   store_addresses                 store_addresses[]
   store_delivery_options          store_delivery_options[]
   store_merchant_members          store_merchant_members[]
   store_working_hours             store_working_hours[]
-  product_category_price_limits   product_category_price_limits[]
-  merchants                       merchants                @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  merchants                       merchants                       @relation(fields: [merchant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }
@@ -871,6 +872,156 @@ model orders {
   stores                   stores                         @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("orders")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model buckets {
+  id                         String                       @id
+  name                       String                       @unique(map: "bname")
+  owner                      String?                      @db.Uuid
+  created_at                 DateTime?                    @default(now()) @db.Timestamptz(6)
+  updated_at                 DateTime?                    @default(now()) @db.Timestamptz(6)
+  public                     Boolean?                     @default(false)
+  avif_autodetection         Boolean?                     @default(false)
+  file_size_limit            BigInt?
+  allowed_mime_types         String[]
+  owner_id                   String?
+  type                       buckettype                   @default(STANDARD)
+  objects                    objects[]
+  prefixes                   prefixes[]
+  s3_multipart_uploads       s3_multipart_uploads[]
+  s3_multipart_uploads_parts s3_multipart_uploads_parts[]
+
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model buckets_analytics {
+  name       String
+  type       buckettype @default(ANALYTICS)
+  format     String     @default("ICEBERG")
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at DateTime   @default(now()) @db.Timestamptz(6)
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deleted_at DateTime?  @db.Timestamptz(6)
+
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model buckets_vectors {
+  id             String           @id
+  type           buckettype       @default(VECTOR)
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime         @default(now()) @db.Timestamptz(6)
+  vector_indexes vector_indexes[]
+
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model migrations {
+  id          Int       @id
+  name        String    @unique @db.VarChar(100)
+  hash        String    @db.VarChar(40)
+  executed_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@schema("storage")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model objects {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bucket_id        String?
+  name             String?
+  owner            String?   @db.Uuid
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @default(now()) @db.Timestamptz(6)
+  last_accessed_at DateTime? @default(now()) @db.Timestamptz(6)
+  metadata         Json?
+  path_tokens      String[]  @default(dbgenerated("string_to_array(name, '/'::text)"))
+  version          String?
+  owner_id         String?
+  user_metadata    Json?
+  level            Int?
+  buckets          buckets?  @relation(fields: [bucket_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "objects_bucketId_fkey")
+
+  @@unique([bucket_id, name], map: "bucketid_objname")
+  @@unique([name, bucket_id, level], map: "idx_name_bucket_level_unique")
+  @@unique([bucket_id, level, name], map: "objects_bucket_id_level_idx")
+  @@index([bucket_id, name], map: "idx_objects_bucket_id_name")
+  @@index([name], map: "name_prefix_search")
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model prefixes {
+  bucket_id  String
+  name       String
+  level      Int       @default(dbgenerated("storage.get_level(name)"))
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  buckets    buckets   @relation(fields: [bucket_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "prefixes_bucketId_fkey")
+
+  @@id([bucket_id, level, name])
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model s3_multipart_uploads {
+  id                         String                       @id
+  in_progress_size           BigInt                       @default(0)
+  upload_signature           String
+  bucket_id                  String
+  key                        String
+  version                    String
+  owner_id                   String?
+  created_at                 DateTime                     @default(now()) @db.Timestamptz(6)
+  user_metadata              Json?
+  buckets                    buckets                      @relation(fields: [bucket_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  s3_multipart_uploads_parts s3_multipart_uploads_parts[]
+
+  @@index([bucket_id, key, created_at], map: "idx_multipart_uploads_list")
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model s3_multipart_uploads_parts {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  upload_id            String
+  size                 BigInt               @default(0)
+  part_number          Int
+  bucket_id            String
+  key                  String
+  etag                 String
+  owner_id             String?
+  version              String
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  buckets              buckets              @relation(fields: [bucket_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  s3_multipart_uploads s3_multipart_uploads @relation(fields: [upload_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("storage")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model vector_indexes {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()"))
+  name                   String
+  bucket_id              String
+  data_type              String
+  dimension              Int
+  distance_metric        String
+  metadata_configuration Json?
+  created_at             DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime        @default(now()) @db.Timestamptz(6)
+  buckets_vectors        buckets_vectors @relation(fields: [bucket_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([name, bucket_id], map: "vector_indexes_name_bucket_id_idx")
+  @@schema("storage")
 }
 
 /// The underlying view does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -1347,4 +1498,12 @@ enum orders_selection_type_enum {
 
   @@map("selection_type_enum")
   @@schema("orders")
+}
+
+enum buckettype {
+  STANDARD
+  ANALYTICS
+  VECTOR
+
+  @@schema("storage")
 }

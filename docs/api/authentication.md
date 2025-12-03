@@ -222,6 +222,7 @@ Autentica um merchant (lojista) e retorna tokens de acesso junto com todas as lo
 - O `merchant_role` será `"owner"` para lojas onde o merchant é dono
 - Para lojas onde o merchant é membro, o `merchant_role` será o role definido em `store_merchant_members`
 - Use o `token` retornado no header `Authorization: Bearer {token}` para acessar endpoints protegidos
+- **Metadados do Token:** Após o login, os metadados do usuário no Supabase são atualizados automaticamente com `type: 'merchant'` e `role: 'admin'` (ou role do merchant). Isso permite que o middleware `withAuth` identifique corretamente o tipo de usuário.
 
 ---
 
@@ -356,6 +357,7 @@ Registra um novo merchant (lojista) e cria automaticamente sua primeira loja.
 - **Email Existente:** Se o email já existir no Supabase mas não tiver merchant, o sistema cria o merchant e a loja normalmente.
 - **Role Padrão:** Todos os merchants criados recebem role `"admin"` por padrão.
 - **Loja Ativa:** A loja é criada com `is_active: true` por padrão.
+- **Metadados do Token:** Durante o signup, os metadados do usuário no Supabase são configurados com `type: 'merchant'` e `role: 'admin'`. Isso permite que o middleware `withAuth` identifique corretamente o tipo de usuário após o primeiro login.
 
 ---
 
@@ -973,4 +975,59 @@ O sistema utiliza tokens gerados pelo Supabase diretamente, sem geração manual
 - Refresh automático de tokens
 - Invalidação centralizada
 - Integração nativa com Supabase Auth
+
+### Payload do JWT
+
+O token JWT do Supabase contém informações do usuário nos metadados (`user_metadata`). Para merchants, o sistema garante que os seguintes campos estejam presentes:
+
+**Para Merchants:**
+```json
+{
+  "userId": "uuid-do-merchant",
+  "type": "merchant",
+  "role": "admin", // ou "manager"
+  "exp": 1234567890,
+  "iat": 1234567890
+}
+```
+
+**Para Customers:**
+```json
+{
+  "userId": "uuid-do-customer",
+  "type": "customer",
+  "storeId": "uuid-da-loja", // opcional
+  "exp": 1234567890,
+  "iat": 1234567890
+}
+```
+
+### Como o `type` é Definido
+
+- **Merchant Login (`POST /api/auth/merchant/login`):** Após autenticação bem-sucedida, os metadados do usuário são atualizados automaticamente com `type: 'merchant'` e `role: 'admin'` (ou role do merchant).
+- **Merchant Signup (`POST /api/auth/merchant/signup`):** Durante a criação do usuário, os metadados são configurados com `type: 'merchant'` e `role: 'admin'`. Se o usuário já existir no Supabase, os metadados são atualizados antes de criar o merchant.
+- **Refresh Token (`POST /api/auth/refresh`):** O Supabase preserva automaticamente os metadados do usuário ao gerar novos tokens, mantendo o `type` e `role` corretos.
+
+### Validação no Middleware
+
+O middleware `withAuth` extrai o campo `type` dos metadados do token para identificar se o usuário é `customer` ou `merchant`:
+
+```typescript
+const userMetadata = user.user_metadata || {};
+const appMetadata = user.app_metadata || {};
+
+const payload = {
+  userId: user.id,
+  type: (userMetadata.type || appMetadata.type || "customer") as "customer" | "merchant",
+  role: userMetadata.role || appMetadata.role || null,
+  // ...
+};
+```
+
+Isso permite que rotas protegidas verifiquem o tipo de usuário:
+```typescript
+if (context.user.type !== "merchant") {
+  throw ApiError.forbidden("Apenas lojistas podem acessar este endpoint");
+}
+```
 

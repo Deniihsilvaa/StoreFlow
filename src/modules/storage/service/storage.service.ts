@@ -313,6 +313,106 @@ export class StorageService {
 
     return result;
   }
+
+  /**
+   * Obtém a URL da imagem de um produto do storage
+   * Tenta buscar em diferentes caminhos possíveis:
+   * 1. primary/{productId}/
+   * 2. products/{productId}/primary/
+   * @param productId - ID do produto
+   * @returns URL pública da imagem ou null se não encontrar
+   */
+  async getProductImageUrl(productId: string): Promise<string | null> {
+    try {
+      // Tenta primeiro o caminho: primary/{productId}/
+      let folderPath = `primary/${productId}`;
+      let { data, error } = await supabaseClient.storage
+        .from(BUCKET_NAME)
+        .list(folderPath, {
+          limit: 100,
+        });
+
+      // Se não encontrar arquivos diretamente, verifica se há uma subpasta "primary"
+      if (!error && data && data.length > 0) {
+        // Verifica se há uma pasta "primary" dentro
+        const primaryFolder = data.find(item => item.name === 'primary' && !item.id); // pasta não tem id
+        if (primaryFolder) {
+          folderPath = `primary/${productId}/primary`;
+          const result = await supabaseClient.storage
+            .from(BUCKET_NAME)
+            .list(folderPath, {
+              limit: 100,
+            });
+          if (result.data && result.data.length > 0) {
+            data = result.data;
+            error = result.error;
+          }
+        }
+      }
+
+      // Se ainda não encontrou, tenta o caminho: products/{productId}/primary/
+      if (error || !data || data.length === 0) {
+        folderPath = `products/${productId}/primary`;
+        const result = await supabaseClient.storage
+          .from(BUCKET_NAME)
+          .list(folderPath, {
+            limit: 100,
+          });
+        data = result.data;
+        error = result.error;
+      }
+
+      if (error) {
+        logger.warn({ error, productId, folderPath, bucket: BUCKET_NAME }, "Erro ao listar arquivos do produto no storage");
+        return null;
+      }
+
+      if (!data || data.length === 0) {
+        logger.debug({ productId, folderPath }, "Nenhum arquivo encontrado no storage para o produto");
+        return null;
+      }
+      
+      // Filtra apenas arquivos (não pastas) - arquivos têm propriedade 'id', pastas não
+      const files = data.filter(item => {
+        // Arquivos têm 'id', pastas não
+        // Também verifica extensões de imagem comuns
+        const hasImageExtension = /\.(jpg|jpeg|png|webp|gif)$/i.test(item.name || '');
+        return item.id && hasImageExtension;
+      });
+      
+      if (files.length === 0) {
+        logger.debug({ productId, folderPath, itemsCount: data.length }, "Nenhum arquivo de imagem encontrado");
+        return null;
+      }
+      
+      data = files;
+
+      logger.debug({ productId, folderPath, filesCount: data.length }, "Arquivos encontrados no storage");
+
+      // Ordena arquivos pelo nome (que contém timestamp) em ordem decrescente
+      // Formato do nome: {timestamp}_{sanitized_name}.{ext}
+      const sortedFiles = data.sort((a, b) => {
+        // Extrai timestamp do nome do arquivo (primeiro número antes do underscore)
+        const timestampA = parseInt(a.name.split('_')[0] || '0', 10);
+        const timestampB = parseInt(b.name.split('_')[0] || '0', 10);
+        return timestampB - timestampA; // Ordem decrescente (mais recente primeiro)
+      });
+
+      // Pega o arquivo mais recente
+      const latestFile = sortedFiles[0];
+      const filePath = `${folderPath}/${latestFile.name}`;
+      
+      // Obtém URL pública
+      const { data: urlData } = supabaseClient.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath);
+
+      return urlData?.publicUrl || null;
+    } catch (error) {
+      logger.error({ error, productId }, "Erro inesperado ao obter URL da imagem do produto");
+      return null;
+    }
+  }
 }
 
 export const storageService = new StorageService();

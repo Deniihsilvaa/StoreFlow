@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { ApiError } from "@/core/errors/ApiError";
 import type { PaginationQuery } from "@/shared/types/pagination";
+import { storageService } from "@/modules/storage/service/storage.service";
 import type { CreateProductInput } from "../dto/create-product.dto";
 import type { UpdateProductInput } from "../dto/update-product.dto";
 import type { AddCustomizationInput } from "../dto/add-customization.dto";
@@ -48,12 +49,10 @@ class ProductsService {
    * @throws ApiError.validation se o preço estiver fora dos limites
    */
   private async validatePriceByCategory(storeId: string, category: string, price: number) {
-    const priceLimit = await prisma.product_category_price_limits.findUnique({
+    const priceLimit = await prisma.product_category_price_limits.findFirst({
       where: {
-        store_id_category: {
-          store_id: storeId,
-          category: category,
-        },
+        store_id: storeId,
+        category: category,
         is_active: true,
         deleted_at: null,
       },
@@ -210,7 +209,7 @@ class ProductsService {
     ]);
 
     const total = Number((countResult as Array<{ total: number }>)[0]?.total ?? 0);
-    const items = (productsResult as ProductEnriched[]).map((product) => ({
+    const products = (productsResult as ProductEnriched[]).map((product) => ({
       ...product,
       price: product.price ? Number(product.price) : null,
       cost_price: product.cost_price ? Number(product.cost_price) : null,
@@ -221,6 +220,18 @@ class ProductsService {
         ? Number(product.extra_lists_count)
         : null,
     }));
+
+    // Buscar imagens do storage para todos os produtos em paralelo
+    const items = await Promise.all(
+      products.map(async (product) => {
+        const storageImageUrl = await storageService.getProductImageUrl(product.id);
+        const finalImageUrl = storageImageUrl || product.image_url;
+        return {
+          ...product,
+          image_url: finalImageUrl,
+        };
+      })
+    );
 
     return { items, total };
   }
@@ -265,6 +276,11 @@ class ProductsService {
     }
 
     const product = result[0];
+    
+    // Buscar imagem do storage usando o ID do produto
+    const storageImageUrl = await storageService.getProductImageUrl(productId);
+    const finalImageUrl = storageImageUrl || product.image_url;
+    
     return {
       ...product,
       price: product.price ? Number(product.price) : null,
@@ -275,6 +291,7 @@ class ProductsService {
       extra_lists_count: product.extra_lists_count
         ? Number(product.extra_lists_count)
         : null,
+      image_url: finalImageUrl,
     };
   }
 
@@ -289,6 +306,7 @@ class ProductsService {
    * @throws ApiError.forbidden se o merchant não tiver permissão para criar produtos na loja
    */
   async createProduct(userId: string, storeId: string, input: CreateProductInput) {
+    console.log("createProduct", userId, storeId, input);
     // 1. Buscar merchant pelo auth_user_id (CRÍTICO: sempre usar userId do token)
     const merchant = await prisma.merchants.findFirst({
       where: {
@@ -1479,12 +1497,10 @@ class ProductsService {
     });
 
     // 5. Buscar limites de preço da categoria (se houver)
-    const priceLimit = await prisma.product_category_price_limits.findUnique({
+    const priceLimit = await prisma.product_category_price_limits.findFirst({
       where: {
-        store_id_category: {
-          store_id: storeId,
-          category: product.category,
-        },
+        store_id: storeId,
+        category: product.category,
         is_active: true,
         deleted_at: null,
       },
@@ -1505,7 +1521,13 @@ class ProductsService {
 
     const totalOrders = Number(ordersCount[0]?.count ?? 0);
 
-    // 7. Montar resposta completa
+    // 7. Buscar imagem do storage usando o ID do produto
+    const storageImageUrl = await storageService.getProductImageUrl(productId);
+    
+    // Usa a imagem do storage se disponível, senão usa a URL do banco (image_url)
+    const finalImageUrl = storageImageUrl || product.image_url;
+
+    // 8. Montar resposta completa
     return {
       product: {
         id: product.id,
@@ -1515,7 +1537,7 @@ class ProductsService {
         price: Number(product.price),
         cost_price: Number(product.cost_price),
         family: product.family,
-        image_url: product.image_url,
+        image_url: finalImageUrl,
         category: product.category,
         custom_category: product.custom_category,
         is_active: product.is_active,

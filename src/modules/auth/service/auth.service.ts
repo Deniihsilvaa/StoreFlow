@@ -224,7 +224,15 @@ export class AuthService {
 
     const stores = Array.from(storesMap.values());
 
-    // 5. Retornar dados do merchant e lojas confirmadas
+    // 5. Atualizar metadados do usuário no Supabase para incluir type: 'merchant'
+    await supabaseAuthClient.auth.updateUser({
+      data: {
+        type: 'merchant',
+        role: String(merchant.role),
+      },
+    });
+
+    // 6. Retornar dados do merchant e lojas confirmadas
     return {
       user: {
         id: merchant.id,
@@ -296,7 +304,15 @@ export class AuthService {
         throw ApiError.conflict("Este email já possui uma conta de merchant cadastrada");
       }
 
-      // 2.2. Criar merchant para o usuário existente
+      // 2.2. Atualizar metadados do usuário existente no Supabase (usando admin client)
+      await supabaseClient.auth.admin.updateUserById(authUserId, {
+        user_metadata: {
+          type: 'merchant',
+          role: 'admin',
+        },
+      });
+
+      // 2.3. Criar merchant para o usuário existente
       merchant = await prisma.merchants.create({
         data: {
           auth_user_id: authUserId,
@@ -309,6 +325,12 @@ export class AuthService {
       const { data: authData, error: authError } = await supabaseAuthClient.auth.signUp({
         email: input.email,
         password: input.password,
+        options: {
+          data: {
+            type: 'merchant',
+            role: 'admin',
+          },
+        },
       });
 
       if (authError) {
@@ -321,7 +343,16 @@ export class AuthService {
 
       authUserId = authData.user.id;
 
-      // 3.1. Criar merchant
+      // 3.1. Atualizar metadados do usuário recém-criado (usando admin client)
+      // Nota: O signUp já adiciona os metadados via options.data, mas garantimos aqui também
+      await supabaseClient.auth.admin.updateUserById(authUserId, {
+        user_metadata: {
+          type: 'merchant',
+          role: 'admin',
+        },
+      });
+
+      // 3.2. Criar merchant
       merchant = await prisma.merchants.create({
         data: {
           auth_user_id: authUserId,
