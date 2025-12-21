@@ -11,6 +11,8 @@ Endpoints para gerenciar e consultar informações sobre lojas.
 - ✅ `GET /api/stores` - Listar lojas (em desenvolvimento)
 - ✅ `GET /api/stores/[storeId]` - Detalhes da loja
 - ✅ `PATCH /api/merchant/stores/[storeId]` - Atualizar loja (merchant)
+- ✅ `GET /api/merchant/stores/[storeId]/status` - Status da loja (aberta/fechada) - otimizado
+- ✅ `PATCH /api/merchant/stores/[storeId]/toggle-status` - Abrir/fechar loja temporariamente
 
 ## Endpoints
 
@@ -56,7 +58,11 @@ Retorna os detalhes completos de uma loja específica, incluindo produtos ativos
 
 #### Parâmetros de URL
 
-- `storeId` (obrigatório): UUID da loja
+- `storeId` (obrigatório): UUID da loja **ou** slug da loja
+
+**Nota:** O endpoint aceita tanto UUID quanto slug. O sistema detecta automaticamente o tipo de identificador:
+- Se o formato for UUID (ex: `d3c3d99c-e221-4371-861b-d61743ffb09e`), busca por ID
+- Se não for UUID (ex: `kampai-sushi`), busca por slug
 
 #### Descrição dos Campos
 
@@ -83,6 +89,11 @@ Retorna os detalhes completos de uma loja específica, incluindo produtos ativos
 - `legal_responsible_document`: Documento do responsável legal
 - `terms_accepted_at`: Data de aceite dos termos
 
+**Status da Loja:**
+- `isOpen`: Indica se a loja está aberta no momento atual (calculado automaticamente)
+- `isTemporarilyClosed`: Indica se a loja está temporariamente fechada (sobrescreve horários normais)
+- `temporarily_closed`: Campo booleano que indica se a loja foi fechada temporariamente pelo merchant
+
 **Endereço:**
 - `address_*`: Dados completos do endereço da loja
 
@@ -102,10 +113,16 @@ Retorna os detalhes completos de uma loja específica, incluindo produtos ativos
   - Cada produto inclui dados completos da view `products_enriched`
   - `available_customizations`: Array com customizações disponíveis (quando aplicável)
 
-#### Exemplo de Request
+#### Exemplo de Request (por UUID)
 
 ```
 GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e
+```
+
+#### Exemplo de Request (por Slug)
+
+```
+GET /api/stores/kampai-sushi
 ```
 
 #### Exemplo de Response (200)
@@ -156,6 +173,9 @@ GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e
     "address_complement": "1º Andar",
     "products_count": 3,
     "team_members_count": null,
+    "isOpen": true,
+    "isTemporarilyClosed": false,
+    "temporarily_closed": false,
     "working_hours": [
       {
         "opens_at": null,
@@ -201,11 +221,51 @@ GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e
 }
 ```
 
+#### Cálculo de Status da Loja
+
+O endpoint calcula automaticamente o status da loja (`isOpen`) considerando:
+
+1. **Loja inativa** (`is_active = false`): Sempre retorna `isOpen = false`
+2. **Fechamento temporário** (`temporarily_closed = true`): Retorna `isOpen = false` independente dos horários
+3. **Horários normais**: Calcula baseado nos `working_hours` e horário atual
+   - Verifica se o dia atual está dentro do horário de funcionamento
+   - Considera se o dia está marcado como fechado (`is_closed = true`)
+
+**Exemplo de loja temporariamente fechada:**
+```json
+{
+  "isOpen": false,
+  "isTemporarilyClosed": true,
+  "temporarily_closed": true
+}
+```
+
+**Exemplo de loja aberta (horário normal):**
+```json
+{
+  "isOpen": true,
+  "isTemporarilyClosed": false,
+  "temporarily_closed": false
+}
+```
+
 #### Tratamento de Erros
 
-- **404**: Loja não encontrada
+- **404**: Loja não encontrada (quando UUID ou slug não existe)
 - **405**: Método HTTP não permitido (apenas GET é suportado)
-- **422**: Parâmetro storeId inválido
+- **422**: Parâmetro storeId ausente ou vazio
+
+#### Detecção Automática de Tipo
+
+O endpoint detecta automaticamente se o parâmetro é UUID ou slug:
+
+- **UUID**: Formato `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (ex: `d3c3d99c-e221-4371-861b-d61743ffb09e`)
+- **Slug**: Qualquer outro formato (ex: `kampai-sushi`, `pizzaria-do-joao`)
+
+**Exemplos válidos:**
+- `GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e` → Busca por UUID
+- `GET /api/stores/kampai-sushi` → Busca por slug
+- `GET /api/stores/pizzaria-do-joao` → Busca por slug
 
 #### Exemplo de Erro 405
 
@@ -230,25 +290,48 @@ Quando um método HTTP não suportado é usado (ex: PUT, POST, DELETE):
 
 ### GET /api/stores/[storeId]/products
 
-Lista produtos de uma loja específica.
+Lista produtos de uma loja específica. **Retorna apenas produtos da loja especificada no path parameter.**
 
 #### Parâmetros de URL
 
-- `storeId` (obrigatório): UUID da loja
+- `storeId` (obrigatório): UUID da loja **ou** slug da loja
+
+**Nota:** Aceita tanto UUID quanto slug (mesma lógica do endpoint principal)
+- Se for UUID, busca diretamente por `id`
+- Se for slug, converte para UUID antes de filtrar
 
 #### Query Parameters
 
-- `page` (opcional): Número da página
-- `limit` (opcional): Itens por página
-- `category` (opcional): Filtrar por categoria
+- `page` (opcional): Número da página (padrão: 1)
+- `limit` (opcional): Itens por página (padrão: 20)
+- `category` (opcional): Filtrar por categoria de produto
 - `isActive` (opcional): Filtrar por status (true/false)
-- `search` (opcional): Buscar por nome ou descrição
+- `search` (opcional): Buscar por nome ou descrição do produto
 
-#### Exemplo de Request
+#### Exemplo de Request (por UUID)
 
 ```
 GET /api/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/products?page=1&limit=20
 ```
+
+#### Exemplo de Request (por Slug)
+
+```
+GET /api/stores/kampai-sushi/products?page=1&limit=20&category=Temakis
+```
+
+#### Segurança
+
+- ✅ **Filtro obrigatório por loja**: O endpoint sempre filtra produtos pela loja especificada no path parameter
+- ✅ **Validação de loja**: Se o slug não existir, retorna erro 404
+- ✅ **Isolamento de dados**: Não é possível acessar produtos de outras lojas através deste endpoint
+- ✅ **View otimizada**: Utiliza a view `products_enriched` para melhor performance
+
+#### Detalhes Técnicos
+
+- Utiliza a view `views.products_enriched` para dados enriquecidos
+- Filtra automaticamente produtos deletados (`deleted_at IS NULL`)
+- Retorna apenas produtos ativos por padrão (pode ser alterado com `isActive=false`)
 
 ---
 
@@ -258,7 +341,9 @@ Lista categorias de produtos de uma loja.
 
 #### Parâmetros de URL
 
-- `storeId` (obrigatório): UUID da loja
+- `storeId` (obrigatório): UUID da loja **ou** slug da loja
+
+**Nota:** Aceita tanto UUID quanto slug (mesma lógica do endpoint principal)
 
 ---
 
@@ -268,7 +353,9 @@ Lista pedidos de uma loja.
 
 #### Parâmetros de URL
 
-- `storeId` (obrigatório): UUID da loja
+- `storeId` (obrigatório): UUID da loja **ou** slug da loja
+
+**Nota:** Aceita tanto UUID quanto slug (mesma lógica do endpoint principal)
 
 #### Headers
 
@@ -278,10 +365,17 @@ Authorization: Bearer {token}
 
 ## Notas Importantes
 
+- **Identificadores**: Todos os endpoints `/api/stores/[storeId]/*` aceitam tanto **UUID** quanto **slug** da loja
+  - O sistema detecta automaticamente o tipo de identificador usando regex
+  - **UUID**: Formato `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (ex: `d3c3d99c-e221-4371-861b-d61743ffb09e`)
+  - **Slug**: Qualquer outro formato que não seja UUID (ex: `kampai-sushi`, `pizzaria-do-joao`)
+  - Se o formato corresponder a UUID, busca por `id`; caso contrário, busca por `slug` e converte para UUID
+- **Segurança**: Todos os endpoints que listam recursos por loja (`/products`, `/orders`, etc.) filtram obrigatoriamente pela loja especificada no path parameter, garantindo isolamento de dados
+- **Status da Loja**: O endpoint `GET /api/stores/[storeId]` retorna automaticamente `isOpen` e `isTemporarilyClosed`, calculados em tempo real baseado nos horários de funcionamento e no campo `temporarily_closed`
 - Todos os endpoints de lojas retornam apenas lojas ativas (`is_active = true`)
-- Produtos retornados são apenas os ativos (`is_active = true` e `deleted_at IS NULL`)
+- Produtos retornados são apenas os não deletados (`deleted_at IS NULL`), podendo filtrar por `is_active` via query parameter
 - A view `stores_complete` é utilizada para dados enriquecidos da loja
-- A view `products_enriched` é utilizada para dados enriquecidos dos produtos
+- A view `products_enriched` é utilizada para dados enriquecidos dos produtos (com contagens de customizações, listas extras, etc.)
 
 ## URLs de Imagens
 
@@ -592,4 +686,292 @@ O endpoint foi otimizado para garantir execução rápida e evitar timeouts:
 - **Processamento em memória**: Horários existentes são mapeados em memória para acesso rápido durante o loop de atualização
 
 **Nota Técnica**: A transação usa o timeout padrão do Prisma (5 segundos). Com a otimização implementada, mesmo atualizando todos os 7 dias da semana, a operação completa em menos de 2 segundos.
+
+---
+
+### GET /api/merchant/stores/[storeId]/status
+
+Retorna apenas o status atual da loja (aberta/fechada) e informações básicas de horário. Endpoint otimizado para retornar dados mínimos necessários.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+
+#### Exemplo de Request
+
+```
+GET /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/status
+```
+
+#### Exemplo de Response (200) - Loja Aberta
+
+```json
+{
+  "success": true,
+  "data": {
+    "isOpen": true,
+    "currentDay": "Segunda-feira",
+    "currentDayHours": {
+      "open": "08:00",
+      "close": "22:00",
+      "closed": false
+    },
+    "nextOpenDay": null,
+    "nextOpenHours": null,
+    "isTemporarilyClosed": false,
+    "isInactive": false,
+    "lastUpdated": "2025-12-20T10:30:00Z"
+  },
+  "timestamp": "2025-12-20T10:30:00Z"
+}
+```
+
+#### Exemplo de Response (200) - Loja Fechada
+
+```json
+{
+  "success": true,
+  "data": {
+    "isOpen": false,
+    "currentDay": "Domingo",
+    "currentDayHours": null,
+    "nextOpenDay": "Segunda-feira",
+    "nextOpenHours": {
+      "open": "08:00",
+      "close": "22:00"
+    },
+    "lastUpdated": "2025-12-20T10:30:00Z"
+  },
+  "timestamp": "2025-12-20T10:30:00Z"
+}
+```
+
+#### Exemplo de Response (200) - Dia Fechado
+
+```json
+{
+  "success": true,
+  "data": {
+    "isOpen": false,
+    "currentDay": "Domingo",
+    "currentDayHours": {
+      "open": "00:00",
+      "close": "00:00",
+      "closed": true
+    },
+    "nextOpenDay": "Segunda-feira",
+    "nextOpenHours": {
+      "open": "08:00",
+      "close": "22:00"
+    },
+    "isTemporarilyClosed": false,
+    "isInactive": false,
+    "lastUpdated": "2025-12-20T10:30:00Z"
+  },
+  "timestamp": "2025-12-20T10:30:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem visualizar status da loja
+- **404**: Loja não encontrada
+- **422**: Formato de storeId inválido
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem visualizar status da loja
+- ✅ Loja inativa (`is_active = false`) sempre retorna `isOpen: false`
+- ✅ Status é calculado baseado nos horários de funcionamento e hora atual
+- ✅ Se a loja está fechada, retorna informações do próximo dia aberto (se houver)
+- ✅ Se o dia atual está fechado (`is_closed = true`), `currentDayHours.closed` será `true`
+- ✅ Horários são formatados como `HH:mm` (ex: `08:00`, `22:00`)
+- ✅ Se `temporarily_closed = true`, a loja está fechada independente dos horários
+- ✅ O campo `isTemporarilyClosed` indica se a loja está temporariamente fechada
+- ✅ O campo `isInactive` indica se a loja está inativa permanentemente
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ `storeId` validado como UUID
+- ✅ Loja validada como existente e não deletada
+
+#### Otimizações de Performance
+
+Este endpoint foi otimizado para retornar apenas dados essenciais:
+
+- **Query otimizada**: Busca apenas `id`, `is_active`, `deleted_at` e `store_working_hours` (não busca todos os dados da loja)
+- **Cálculo no backend**: Status é calculado no servidor, reduzindo processamento no frontend
+- **Tamanho reduzido**: Resposta de ~200 bytes vs ~5KB do endpoint completo
+- **Cache recomendado**: Pode ser cacheado por 1 minuto (status muda pouco)
+
+**Comparação de Performance:**
+
+| Aspecto | `GET /stores/[id]` (completo) | `GET /stores/[id]/status` (otimizado) |
+|---------|-------------------------------|--------------------------------------|
+| **Tamanho** | ~5KB | ~200 bytes |
+| **Tempo** | ~150ms | ~50ms |
+| **Dados** | Tudo da loja | Apenas status |
+| **Cache** | Difícil (muitos dados) | Fácil (poucos dados) |
+| **Uso** | Quando precisa de tudo | Quando só precisa do status |
+
+---
+
+### PATCH /api/merchant/stores/[storeId]/toggle-status
+
+Abre ou fecha a loja temporariamente, sobrescrevendo os horários de funcionamento configurados. Útil para fechar a loja mais cedo, abrir fora do horário, ou fechar temporariamente por algum problema.
+
+#### Headers
+
+```
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### Path Parameters
+
+- `storeId` (string, UUID): ID da loja
+
+#### Body Parameters
+
+```json
+{
+  "closed": "boolean (obrigatório)"
+}
+```
+
+- `closed`: `true` para fechar a loja temporariamente, `false` para abrir (voltar ao horário normal)
+
+#### Exemplo de Request - Fechar Loja
+
+```json
+{
+  "closed": true
+}
+```
+
+#### Exemplo de Request - Abrir Loja
+
+```json
+{
+  "closed": false
+}
+```
+
+#### Exemplo de Response (200) - Loja Fechada Temporariamente
+
+```json
+{
+  "success": true,
+  "data": {
+    "isOpen": false,
+    "currentDay": "Segunda-feira",
+    "currentDayHours": {
+      "open": "08:00",
+      "close": "22:00",
+      "closed": false
+    },
+    "nextOpenDay": null,
+    "nextOpenHours": null,
+    "isTemporarilyClosed": true,
+    "isInactive": false,
+    "lastUpdated": "2025-12-20T15:30:00Z"
+  },
+  "timestamp": "2025-12-20T15:30:00Z"
+}
+```
+
+#### Exemplo de Response (200) - Loja Aberta (Voltou ao Normal)
+
+```json
+{
+  "success": true,
+  "data": {
+    "isOpen": true,
+    "currentDay": "Segunda-feira",
+    "currentDayHours": {
+      "open": "08:00",
+      "close": "22:00",
+      "closed": false
+    },
+    "nextOpenDay": null,
+    "nextOpenHours": null,
+    "isTemporarilyClosed": false,
+    "isInactive": false,
+    "lastUpdated": "2025-12-20T16:00:00Z"
+  },
+  "timestamp": "2025-12-20T16:00:00Z"
+}
+```
+
+#### Tratamento de Erros
+
+- **400**: Content-Type inválido (deve ser `application/json`)
+- **401**: Não autenticado ou token inválido
+- **403**: Apenas lojistas podem alterar status da loja
+- **403**: Sem permissão para alterar status desta loja
+- **404**: Merchant não encontrado
+- **404**: Loja não encontrada
+- **422**: Dados inválidos (campo `closed` ausente ou inválido)
+- **422**: Formato de storeId inválido
+- **422**: Não é possível alterar status de uma loja inativa
+
+#### Exemplo de Erro 422 (Loja Inativa)
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Dados inválidos",
+    "code": "VALIDATION_ERROR",
+    "status": 422,
+    "details": {
+      "storeId": ["Não é possível alterar status de uma loja inativa"]
+    },
+    "timestamp": "2025-12-20T15:30:00Z"
+  }
+}
+```
+
+#### Regras de Negócio
+
+- ✅ Apenas merchants autenticados podem alterar status da loja
+- ✅ Merchant deve ser dono da loja ou membro com permissão
+- ✅ Loja inativa (`is_active = false`) não pode ter status alterado
+- ✅ `closed: true` fecha a loja temporariamente, mesmo que esteja dentro do horário de funcionamento
+- ✅ `closed: false` remove o fechamento temporário e volta a usar os horários normais
+- ✅ O status temporário sobrescreve o cálculo baseado em horários
+- ✅ A resposta retorna o status atualizado completo (mesmo formato do GET /status)
+
+#### Validações de Segurança
+
+- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
+- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
+- ✅ Propriedade da loja validada (verifica se é dono ou membro)
+- ✅ `storeId` validado como UUID
+- ✅ Loja validada como existente, não deletada e ativa
+
+#### Casos de Uso
+
+1. **Fechar mais cedo**: Loja fecha antes do horário normal
+2. **Abrir fora do horário**: Loja abre em um horário especial
+3. **Fechar temporariamente**: Loja fecha por problema técnico ou falta de estoque
+4. **Voltar ao normal**: Remove o fechamento temporário e volta aos horários configurados
+
+#### Observações Importantes
+
+- ⚠️ O status temporário **sobrescreve** os horários de funcionamento configurados
+- ⚠️ Para voltar ao funcionamento normal, é necessário enviar `closed: false`
+- ⚠️ O status temporário não afeta os horários configurados, apenas o cálculo de status atual
+- ✅ O campo `isTemporarilyClosed` na resposta indica se a loja está temporariamente fechada
+- ✅ O campo `isInactive` na resposta indica se a loja está inativa permanentemente
+
+---
 

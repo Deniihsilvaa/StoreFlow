@@ -59,10 +59,7 @@ FROM
     LEFT JOIN public.product_extra_list_applicability pela ON ((pela.product_id = p.id))
   )
 WHERE
-  (
-    (p.deleted_at IS NULL)
-    AND (p.is_active = TRUE)
-  )
+  (p.deleted_at IS NULL)
 GROUP BY
   p.id,
   s.id;

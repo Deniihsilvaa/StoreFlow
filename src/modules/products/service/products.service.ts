@@ -110,7 +110,9 @@ class ProductsService {
         product_id: productId,
         changed_by: userId,
         change_type: changeType,
-        previous_data: previousData as Prisma.InputJsonValue | null,
+        previous_data: previousData 
+          ? (previousData as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         new_data: newData as Prisma.InputJsonValue,
         changed_fields: changedFields,
         note: note || null,
@@ -417,7 +419,7 @@ class ProductsService {
           product_id: newProduct.id,
           changed_by: userId,
           change_type: 'created',
-          previous_data: null,
+          previous_data: Prisma.JsonNull,
           new_data: productData as Prisma.InputJsonValue,
           changed_fields: Object.keys(productData),
           note: 'Produto criado',
@@ -509,13 +511,23 @@ class ProductsService {
       throw ApiError.forbidden("Você não tem permissão para atualizar produtos nesta loja");
     }
 
-    // 3. Verificar se o produto existe e pertence à loja
+    // 3. Verificar se o produto existe e pertence à loja (buscar dados completos para histórico)
     const existingProduct = await prisma.products.findUnique({
       where: { id: productId },
       select: { 
         id: true, 
         store_id: true, 
         name: true,
+        description: true,
+        price: true,
+        cost_price: true,
+        family: true,
+        image_url: true,
+        category: true,
+        custom_category: true,
+        is_active: true,
+        preparation_time: true,
+        nutritional_info: true,
         deleted_at: true,
       },
     });
@@ -532,7 +544,24 @@ class ProductsService {
       throw ApiError.forbidden("Produto não pertence a esta loja");
     }
 
-    // 4. Validar preço por categoria se o preço ou categoria foram alterados
+    // 4. Preparar dados anteriores para histórico
+    const previousData = {
+      id: existingProduct.id,
+      store_id: existingProduct.store_id,
+      name: existingProduct.name,
+      description: existingProduct.description,
+      price: Number(existingProduct.price),
+      cost_price: Number(existingProduct.cost_price),
+      family: existingProduct.family,
+      image_url: existingProduct.image_url,
+      category: existingProduct.category,
+      custom_category: existingProduct.custom_category,
+      is_active: existingProduct.is_active,
+      preparation_time: existingProduct.preparation_time,
+      nutritional_info: existingProduct.nutritional_info,
+    };
+
+    // 5. Validar preço por categoria se o preço ou categoria foram alterados
     const categoryToValidate = input.category ?? existingProduct.category;
     const priceToValidate = input.price ?? Number(existingProduct.price);
     await this.validatePriceByCategory(storeId, categoryToValidate, priceToValidate);
@@ -556,7 +585,7 @@ class ProductsService {
       }
     }
 
-    // 5. Validar customizações se fornecidas
+    // 7. Validar customizações se fornecidas
     if (input.customizations) {
       // Validar customizações a atualizar
       if (input.customizations.update && input.customizations.update.length > 0) {
@@ -598,9 +627,9 @@ class ProductsService {
       }
     }
 
-    // 6. Atualizar produto usando transação para garantir consistência
+    // 8. Atualizar produto usando transação para garantir consistência
     await prisma.$transaction(async (tx) => {
-      // 6.1. Preparar dados de atualização do produto
+      // 8.1. Preparar dados de atualização do produto
       const productUpdateData: {
         name?: string;
         description?: string | null;
@@ -654,7 +683,7 @@ class ProductsService {
           : Prisma.JsonNull;
       }
 
-      // 7.2. Atualizar produto
+      // 8.2. Atualizar produto
       const updated = await tx.products.update({
         where: { id: productId },
         data: productUpdateData,
@@ -675,7 +704,7 @@ class ProductsService {
         },
       });
 
-      // 7.2.1. Criar histórico de atualização
+      // 8.3. Criar histórico de atualização
       const changedFields: string[] = [];
       if (input.name !== undefined) changedFields.push('name');
       if (input.description !== undefined) changedFields.push('description');
@@ -719,9 +748,7 @@ class ProductsService {
         });
       }
 
-      return updated;
-
-      // 6.3. Gerenciar customizações
+      // 8.4. Gerenciar customizações
       if (input.customizations) {
         // Adicionar novas customizações
         if (input.customizations.add && input.customizations.add.length > 0) {
@@ -771,7 +798,7 @@ class ProductsService {
         }
       }
 
-      // 6.4. Gerenciar listas extras
+      // 8.5. Gerenciar listas extras
       if (input.extraListIds !== undefined) {
         // Remover todas as aplicabilidades existentes
         await tx.product_extra_list_applicability.deleteMany({
@@ -790,7 +817,7 @@ class ProductsService {
       }
     });
 
-    // 7. Buscar produto atualizado completo (usando a view enriquecida)
+    // 9. Buscar produto atualizado completo (usando a view enriquecida)
     const updatedProduct = await this.getProductById(productId);
 
     if (!updatedProduct) {
@@ -847,12 +874,23 @@ class ProductsService {
       throw ApiError.forbidden("Você não tem permissão para desativar produtos nesta loja");
     }
 
-    // 3. Verificar se o produto existe e pertence à loja
+    // 3. Verificar se o produto existe e pertence à loja (buscar dados completos para histórico)
     const existingProduct = await prisma.products.findUnique({
       where: { id: productId },
       select: { 
         id: true, 
-        store_id: true, 
+        store_id: true,
+        name: true,
+        description: true,
+        price: true,
+        cost_price: true,
+        family: true,
+        image_url: true,
+        category: true,
+        custom_category: true,
+        is_active: true,
+        preparation_time: true,
+        nutritional_info: true,
         deleted_at: true,
       },
     });

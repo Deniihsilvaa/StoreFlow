@@ -795,6 +795,7 @@ Todos os campos são opcionais (atualização parcial):
 - **404**: Loja não encontrada
 - **404**: Produto não encontrado
 - **422**: Dados inválidos (formato inválido)
+- **422**: Preço fora dos limites permitidos para a categoria
 - **422**: Customizações inválidas (não encontradas ou não pertencem ao produto)
 - **422**: Listas extras inválidas (não encontradas ou não pertencem à loja)
 
@@ -840,6 +841,8 @@ Todos os campos são opcionais (atualização parcial):
 - ✅ `customizationType` deve ser um dos valores: `extra`, `sauce`, `base`, `protein`, `topping`
 - ✅ `selectionType` deve ser `quantity` ou `boolean`
 - ✅ Todas as operações são atômicas (transação)
+- ✅ **Validação de preço por categoria**: Se `price` ou `category` forem alterados, o preço será validado contra os limites configurados para a categoria (se houver)
+- ✅ **Histórico de alterações**: Um registro de histórico é criado automaticamente quando qualquer campo do produto é atualizado, incluindo informações sobre campos alterados, dados anteriores e novos dados
 - ✅ **Customizações**: 
   - `add`: Cria novas customizações
   - `update`: Atualiza customizações existentes (requer ID)
@@ -847,6 +850,7 @@ Todos os campos são opcionais (atualização parcial):
 - ✅ **Listas extras**: Substitui todas as listas extras existentes pelas fornecidas
 - ✅ Enviar `imageUrl: ""` ou `null` remove a URL da imagem
 - ✅ Enviar `description: null` ou `customCategory: null` limpa o campo
+- ✅ Enviar `nutritionalInfo: null` limpa as informações nutricionais
 
 #### Validações de Segurança
 
@@ -1465,7 +1469,8 @@ A view `products_enriched` retorna dados enriquecidos dos produtos, incluindo:
 ### Filtros Padrão
 
 - Apenas produtos não deletados (`deleted_at IS NULL`)
-- Ordenação por `created_at DESC`
+- **Inclui produtos ativos e inativos** (`is_active = true` ou `is_active = false`)
+- Ordenação por `created_at DESC` (quando aplicável)
 
 ## Notas Importantes
 
