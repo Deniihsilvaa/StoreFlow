@@ -12,7 +12,6 @@ Endpoints para gerenciar e consultar informações sobre lojas.
 - ✅ `GET /api/stores/[storeId]` - Detalhes da loja
 - ✅ `PATCH /api/merchant/stores/[storeId]` - Atualizar loja (merchant)
 - ✅ `GET /api/merchant/stores/[storeId]/status` - Status da loja (aberta/fechada) - otimizado
-- ✅ `PATCH /api/merchant/stores/[storeId]/toggle-status` - Abrir/fechar loja temporariamente
 
 ## Endpoints
 
@@ -90,9 +89,7 @@ Retorna os detalhes completos de uma loja específica, incluindo produtos ativos
 - `terms_accepted_at`: Data de aceite dos termos
 
 **Status da Loja:**
-- `isOpen`: Indica se a loja está aberta no momento atual (calculado automaticamente)
-- `isTemporarilyClosed`: Indica se a loja está temporariamente fechada (sobrescreve horários normais)
-- `temporarily_closed`: Campo booleano que indica se a loja foi fechada temporariamente pelo merchant
+- `isOpen`: Indica se a loja está aberta no momento atual (calculado automaticamente baseado nos horários de funcionamento)
 
 **Endereço:**
 - `address_*`: Dados completos do endereço da loja
@@ -174,8 +171,6 @@ GET /api/stores/kampai-sushi
     "products_count": 3,
     "team_members_count": null,
     "isOpen": true,
-    "isTemporarilyClosed": false,
-    "temporarily_closed": false,
     "working_hours": [
       {
         "opens_at": null,
@@ -226,28 +221,11 @@ GET /api/stores/kampai-sushi
 O endpoint calcula automaticamente o status da loja (`isOpen`) considerando:
 
 1. **Loja inativa** (`is_active = false`): Sempre retorna `isOpen = false`
-2. **Fechamento temporário** (`temporarily_closed = true`): Retorna `isOpen = false` independente dos horários
+2. **Horários de funcionamento**: Calcula `isOpen` baseado nos horários configurados
 3. **Horários normais**: Calcula baseado nos `working_hours` e horário atual
    - Verifica se o dia atual está dentro do horário de funcionamento
    - Considera se o dia está marcado como fechado (`is_closed = true`)
 
-**Exemplo de loja temporariamente fechada:**
-```json
-{
-  "isOpen": false,
-  "isTemporarilyClosed": true,
-  "temporarily_closed": true
-}
-```
-
-**Exemplo de loja aberta (horário normal):**
-```json
-{
-  "isOpen": true,
-  "isTemporarilyClosed": false,
-  "temporarily_closed": false
-}
-```
 
 #### Tratamento de Erros
 
@@ -371,7 +349,7 @@ Authorization: Bearer {token}
   - **Slug**: Qualquer outro formato que não seja UUID (ex: `kampai-sushi`, `pizzaria-do-joao`)
   - Se o formato corresponder a UUID, busca por `id`; caso contrário, busca por `slug` e converte para UUID
 - **Segurança**: Todos os endpoints que listam recursos por loja (`/products`, `/orders`, etc.) filtram obrigatoriamente pela loja especificada no path parameter, garantindo isolamento de dados
-- **Status da Loja**: O endpoint `GET /api/stores/[storeId]` retorna automaticamente `isOpen` e `isTemporarilyClosed`, calculados em tempo real baseado nos horários de funcionamento e no campo `temporarily_closed`
+- **Status da Loja**: O endpoint `GET /api/stores/[storeId]` retorna automaticamente `isOpen`, calculado em tempo real baseado nos horários de funcionamento
 - Todos os endpoints de lojas retornam apenas lojas ativas (`is_active = true`)
 - Produtos retornados são apenas os não deletados (`deleted_at IS NULL`), podendo filtrar por `is_active` via query parameter
 - A view `stores_complete` é utilizada para dados enriquecidos da loja
@@ -724,7 +702,6 @@ GET /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/status
     },
     "nextOpenDay": null,
     "nextOpenHours": null,
-    "isTemporarilyClosed": false,
     "isInactive": false,
     "lastUpdated": "2025-12-20T10:30:00Z"
   },
@@ -770,7 +747,6 @@ GET /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/status
       "open": "08:00",
       "close": "22:00"
     },
-    "isTemporarilyClosed": false,
     "isInactive": false,
     "lastUpdated": "2025-12-20T10:30:00Z"
   },
@@ -793,8 +769,7 @@ GET /api/merchant/stores/d3c3d99c-e221-4371-861b-d61743ffb09e/status
 - ✅ Se a loja está fechada, retorna informações do próximo dia aberto (se houver)
 - ✅ Se o dia atual está fechado (`is_closed = true`), `currentDayHours.closed` será `true`
 - ✅ Horários são formatados como `HH:mm` (ex: `08:00`, `22:00`)
-- ✅ Se `temporarily_closed = true`, a loja está fechada independente dos horários
-- ✅ O campo `isTemporarilyClosed` indica se a loja está temporariamente fechada
+- ✅ O campo `isOpen` é calculado automaticamente baseado nos horários de funcionamento e no status `is_active` da loja
 - ✅ O campo `isInactive` indica se a loja está inativa permanentemente
 
 #### Validações de Segurança
@@ -824,154 +799,4 @@ Este endpoint foi otimizado para retornar apenas dados essenciais:
 
 ---
 
-### PATCH /api/merchant/stores/[storeId]/toggle-status
-
-Abre ou fecha a loja temporariamente, sobrescrevendo os horários de funcionamento configurados. Útil para fechar a loja mais cedo, abrir fora do horário, ou fechar temporariamente por algum problema.
-
-#### Headers
-
-```
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-#### Path Parameters
-
-- `storeId` (string, UUID): ID da loja
-
-#### Body Parameters
-
-```json
-{
-  "closed": "boolean (obrigatório)"
-}
-```
-
-- `closed`: `true` para fechar a loja temporariamente, `false` para abrir (voltar ao horário normal)
-
-#### Exemplo de Request - Fechar Loja
-
-```json
-{
-  "closed": true
-}
-```
-
-#### Exemplo de Request - Abrir Loja
-
-```json
-{
-  "closed": false
-}
-```
-
-#### Exemplo de Response (200) - Loja Fechada Temporariamente
-
-```json
-{
-  "success": true,
-  "data": {
-    "isOpen": false,
-    "currentDay": "Segunda-feira",
-    "currentDayHours": {
-      "open": "08:00",
-      "close": "22:00",
-      "closed": false
-    },
-    "nextOpenDay": null,
-    "nextOpenHours": null,
-    "isTemporarilyClosed": true,
-    "isInactive": false,
-    "lastUpdated": "2025-12-20T15:30:00Z"
-  },
-  "timestamp": "2025-12-20T15:30:00Z"
-}
-```
-
-#### Exemplo de Response (200) - Loja Aberta (Voltou ao Normal)
-
-```json
-{
-  "success": true,
-  "data": {
-    "isOpen": true,
-    "currentDay": "Segunda-feira",
-    "currentDayHours": {
-      "open": "08:00",
-      "close": "22:00",
-      "closed": false
-    },
-    "nextOpenDay": null,
-    "nextOpenHours": null,
-    "isTemporarilyClosed": false,
-    "isInactive": false,
-    "lastUpdated": "2025-12-20T16:00:00Z"
-  },
-  "timestamp": "2025-12-20T16:00:00Z"
-}
-```
-
-#### Tratamento de Erros
-
-- **400**: Content-Type inválido (deve ser `application/json`)
-- **401**: Não autenticado ou token inválido
-- **403**: Apenas lojistas podem alterar status da loja
-- **403**: Sem permissão para alterar status desta loja
-- **404**: Merchant não encontrado
-- **404**: Loja não encontrada
-- **422**: Dados inválidos (campo `closed` ausente ou inválido)
-- **422**: Formato de storeId inválido
-- **422**: Não é possível alterar status de uma loja inativa
-
-#### Exemplo de Erro 422 (Loja Inativa)
-
-```json
-{
-  "success": false,
-  "error": {
-    "message": "Dados inválidos",
-    "code": "VALIDATION_ERROR",
-    "status": 422,
-    "details": {
-      "storeId": ["Não é possível alterar status de uma loja inativa"]
-    },
-    "timestamp": "2025-12-20T15:30:00Z"
-  }
-}
-```
-
-#### Regras de Negócio
-
-- ✅ Apenas merchants autenticados podem alterar status da loja
-- ✅ Merchant deve ser dono da loja ou membro com permissão
-- ✅ Loja inativa (`is_active = false`) não pode ter status alterado
-- ✅ `closed: true` fecha a loja temporariamente, mesmo que esteja dentro do horário de funcionamento
-- ✅ `closed: false` remove o fechamento temporário e volta a usar os horários normais
-- ✅ O status temporário sobrescreve o cálculo baseado em horários
-- ✅ A resposta retorna o status atualizado completo (mesmo formato do GET /status)
-
-#### Validações de Segurança
-
-- ✅ `userId` validado pelo middleware `withAuth` (do token JWT)
-- ✅ Merchant buscado por `auth_user_id` (nunca aceita do payload)
-- ✅ Propriedade da loja validada (verifica se é dono ou membro)
-- ✅ `storeId` validado como UUID
-- ✅ Loja validada como existente, não deletada e ativa
-
-#### Casos de Uso
-
-1. **Fechar mais cedo**: Loja fecha antes do horário normal
-2. **Abrir fora do horário**: Loja abre em um horário especial
-3. **Fechar temporariamente**: Loja fecha por problema técnico ou falta de estoque
-4. **Voltar ao normal**: Remove o fechamento temporário e volta aos horários configurados
-
-#### Observações Importantes
-
-- ⚠️ O status temporário **sobrescreve** os horários de funcionamento configurados
-- ⚠️ Para voltar ao funcionamento normal, é necessário enviar `closed: false`
-- ⚠️ O status temporário não afeta os horários configurados, apenas o cálculo de status atual
-- ✅ O campo `isTemporarilyClosed` na resposta indica se a loja está temporariamente fechada
-- ✅ O campo `isInactive` na resposta indica se a loja está inativa permanentemente
-
----
 

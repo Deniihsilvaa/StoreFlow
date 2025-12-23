@@ -83,39 +83,4 @@ export async function getStoreStatus(
   return ApiResponse.success(status, { request });
 }
 
-export async function toggleStoreStatus(
-  userId: string,
-  storeId: string,
-  body: unknown,
-  request?: NextRequest,
-) {
-  // Validar formato UUID do storeId
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(storeId)) {
-    throw ApiError.validation(
-      { storeId: ["Formato de storeId inválido"] },
-      "Parâmetros inválidos",
-    );
-  }
-
-  // Validar body
-  if (typeof body !== 'object' || body === null) {
-    throw ApiError.validation(
-      { body: ["Body deve ser um objeto"] },
-      "Dados inválidos",
-    );
-  }
-
-  const bodyObj = body as { closed?: boolean };
-  
-  if (typeof bodyObj.closed !== 'boolean') {
-    throw ApiError.validation(
-      { closed: ["Campo 'closed' é obrigatório e deve ser um boolean"] },
-      "Dados inválidos",
-    );
-  }
-
-  const status = await storesService.toggleStoreStatus(userId, storeId, bodyObj.closed);
-  return ApiResponse.success(status, { request });
-}
 

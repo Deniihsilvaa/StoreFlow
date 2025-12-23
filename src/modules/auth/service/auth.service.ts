@@ -58,6 +58,7 @@ export type RefreshTokenResult = AuthTokens;
 export class AuthService {
   // eslint-disable-next-line class-methods-use-this
   async loginCustomer(input: CustomerLoginInput): Promise<any | null> {
+    console.log("loginCustomer", input);
     // 1. Autenticar com Supabase Auth
     const { data: authData, error: authError } =
       await supabaseAuthClient.auth.signInWithPassword({
@@ -82,13 +83,34 @@ export class AuthService {
     if (!customer) {
       throw new Error("Cliente não encontrado");
     }
-    
-    // 2. Validar se o cliente tem acesso à loja especificada
+
+    // Verificar se o storeId é um UUID válido ou se é um slug
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUUID = uuidRegex.test(input.storeId || '');
+
+    // Buscar loja por ID (se for UUID) ou por slug (se não for UUID)
+    const store = await prisma.stores.findFirst({
+      where: isUUID
+        ? { id: input.storeId, deleted_at: null }
+        : { slug: input.storeId, deleted_at: null },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+    if (!store) {
+      throw new Error("Loja não encontrada");
+    }
+
+    // Validar se o cliente tem acesso à loja especificada
     // Buscar relação do cliente com a loja específica (store_costumer está no schema permissions)
+    // IMPORTANTE: usar store.id (UUID) para buscar em store_costumer, não o input original
     const storeCostumer = await prisma.store_costumer.findFirst({
       where: {
         costumer_id: customer.id,
-        store: input.storeId, // Validar que o cliente pertence à loja informada
+        store: store.id, // Usar o ID da loja encontrada (sempre UUID)
         // active pode ser true ou null (default é true), mas não false
         active: {
           not: false, // Aceita true ou null, rejeita false
@@ -98,7 +120,7 @@ export class AuthService {
         stores: true,
       },
     });
-    
+
     if (!storeCostumer) {
       throw new Error("Cliente não tem acesso a esta loja ou a relação está inativa");
     }

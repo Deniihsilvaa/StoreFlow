@@ -48,9 +48,7 @@ export type StoreComplete = {
   products_count: number | null;
   team_members_count: number | null;
   working_hours: unknown | null;
-  temporarily_closed?: boolean | null;
   isOpen?: boolean;
-  isTemporarilyClosed?: boolean;
 };
 
 export type StoreWithProducts = StoreComplete & {
@@ -259,7 +257,7 @@ export class StoresService {
         storeId,
       )) as ProductEnriched[];
 
-      // Buscar temporarily_closed e calcular status
+      // Calcular status da loja
       const storeWithStatus = await this.addStoreStatus(store, storeId);
 
       // Transformar dados da loja
@@ -358,14 +356,13 @@ export class StoresService {
   }
 
   /**
-   * Adiciona informações de status (isOpen, isTemporarilyClosed) à loja
+   * Adiciona informações de status (isOpen) à loja
    */
   private async addStoreStatus(store: StoreComplete, storeId: string): Promise<StoreComplete> {
-    // Buscar temporarily_closed e working hours
+    // Buscar working hours e status ativo
     const storeData = await prisma.stores.findUnique({
       where: { id: storeId },
       select: {
-        temporarily_closed: true,
         is_active: true,
         store_working_hours: {
           where: { deleted_at: null },
@@ -383,24 +380,21 @@ export class StoresService {
       return store;
     }
 
-    const isTemporarilyClosed = storeData.temporarily_closed ?? false;
     const isInactive = !storeData.is_active;
 
-    // Se inativa ou temporariamente fechada, está fechada
+    // Se inativa, está fechada
     let isOpen = false;
-    if (!isInactive && !isTemporarilyClosed) {
+    if (!isInactive) {
       isOpen = this.calculateIsOpen(storeData.store_working_hours);
     }
 
     return {
       ...store,
-      temporarily_closed: isTemporarilyClosed,
       isOpen,
-      isTemporarilyClosed,
     };
   }
 
-  // eslint-disable-next-line class-methods-use-this metodo de buscar por slug da loja
+  // eslint-disable-next-line class-methods-use-this
   async getStoreBySlug(storeSlug: string): Promise<StoreWithProducts | null> {
     // 1. Buscar dados da loja na view stores_complete
     const storeQuery = `
@@ -907,7 +901,6 @@ export class StoresService {
       select: {
         id: true,
         is_active: true,
-        temporarily_closed: true,
         deleted_at: true,
         store_working_hours: {
           where: {
@@ -939,13 +932,9 @@ export class StoresService {
       return this.calculateStatusResponse(store.store_working_hours, false, true);
     }
 
-    // Se a loja está temporariamente fechada, retornar fechada (sobrescreve horários)
-    if (store.temporarily_closed) {
-      return this.calculateStatusResponse(store.store_working_hours, false, false, true);
-    }
-
     // Calcular status baseado nos horários
     const isOpen = this.calculateIsOpen(store.store_working_hours);
+
     return this.calculateStatusResponse(store.store_working_hours, isOpen);
   }
 
@@ -960,7 +949,6 @@ export class StoresService {
   }>): boolean {
     const now = new Date();
     const currentDay = now.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
-    const currentTime = now.getHours() * 60 + now.getMinutes(); // Minutos desde meia-noite
 
     // Buscar horário do dia atual
     const todayHours = workingHours.find(h => h.week_day === currentDay);
@@ -977,12 +965,32 @@ export class StoresService {
       return false; // Sem horário definido = fechado
     }
 
-    // Converter horários para minutos desde meia-noite
-    const openTime = todayHours.opens_at.getHours() * 60 + todayHours.opens_at.getMinutes();
-    const closeTime = todayHours.closes_at.getHours() * 60 + todayHours.closes_at.getMinutes();
+    // Criar data de referência para hoje à meia-noite (timezone local)
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    // Extrair horas e minutos dos horários usando UTC (os horários no banco estão em UTC)
+    // Os horários são armazenados como Time no PostgreSQL, que quando convertido para Date
+    // fica como 1970-01-01T00:30:00.000Z (exemplo), então precisamos usar UTC
+    const openHours = todayHours.opens_at.getUTCHours();
+    const openMinutes = todayHours.opens_at.getUTCMinutes();
+    const closeHours = todayHours.closes_at.getUTCHours();
+    const closeMinutes = todayHours.closes_at.getUTCMinutes();
+
+    // Criar datas completas para hoje com os horários de abertura e fechamento (timezone local)
+    // Estamos usando o timezone local para criar as datas, pois os horários no banco estão em UTC
+    // e precisamos converter para o timezone local para criar as datas corretas
+    const openTime = new Date(todayMidnight);
+    openTime.setHours(openHours, openMinutes, 0, 0);
+    const closeTime = new Date(todayMidnight);
+    closeTime.setHours(closeHours, closeMinutes, 0, 0);
+    // Calcular milissegundos desde meia-noite para comparação
+    const currentTimeMs = now.getTime() - todayMidnight.getTime();
+    const openTimeMs = openTime.getTime() - todayMidnight.getTime();
+    const closeTimeMs = closeTime.getTime() - todayMidnight.getTime();
 
     // Verificar se está dentro do horário de funcionamento
-    return currentTime >= openTime && currentTime < closeTime;
+    return currentTimeMs >= openTimeMs && currentTimeMs < closeTimeMs;
   }
 
   /**
@@ -997,7 +1005,6 @@ export class StoresService {
     }>,
     isOpen: boolean,
     isInactive: boolean = false,
-    isTemporarilyClosed: boolean = false,
   ) {
     const now = new Date();
     const currentDay = now.getDay();
@@ -1063,7 +1070,6 @@ export class StoresService {
       currentDayHours,
       nextOpenDay,
       nextOpenHours,
-      isTemporarilyClosed: isTemporarilyClosed,
       isInactive: isInactive,
       lastUpdated: now.toISOString(),
     };
@@ -1078,97 +1084,6 @@ export class StoresService {
     return `${hours}:${minutes}`;
   }
 
-  /**
-   * Alterna o status temporário da loja (abrir/fechar)
-   * @param userId - ID do usuário autenticado (auth_user_id)
-   * @param storeId - ID da loja
-   * @param closed - true para fechar, false para abrir (voltar ao horário normal)
-   * @returns Status atualizado da loja
-   */
-  async toggleStoreStatus(userId: string, storeId: string, closed: boolean) {
-    // Validar formato UUID do storeId
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(storeId)) {
-      throw ApiError.validation(
-        { storeId: ["Formato de storeId inválido"] },
-        "Parâmetros inválidos",
-      );
-    }
-
-    // 1. Buscar merchant pelo auth_user_id (CRÍTICO: sempre usar userId do token)
-    const merchant = await prisma.merchants.findFirst({
-      where: {
-        auth_user_id: userId,
-        deleted_at: null,
-      },
-      include: {
-        stores: {
-          where: {
-            id: storeId,
-            deleted_at: null,
-          },
-          select: { id: true },
-        },
-        store_merchant_members: {
-          where: {
-            store_id: storeId,
-            deleted_at: null,
-          },
-          select: { store_id: true },
-        },
-      },
-    });
-
-    if (!merchant) {
-      throw ApiError.notFound("Merchant não encontrado", "MERCHANT_NOT_FOUND");
-    }
-
-    // 2. Validar propriedade da loja (CRÍTICO: verificar se é dono ou membro)
-    const isOwner = merchant.stores.some(s => s.id === storeId);
-    const isMember = merchant.store_merchant_members.some(m => m.store_id === storeId);
-
-    if (!isOwner && !isMember) {
-      throw ApiError.forbidden("Você não tem permissão para alterar status desta loja");
-    }
-
-    // 3. Verificar se a loja existe
-    const store = await prisma.stores.findUnique({
-      where: { id: storeId },
-      select: {
-        id: true,
-        is_active: true,
-        temporarily_closed: true,
-        deleted_at: true,
-      },
-    });
-
-    if (!store) {
-      throw ApiError.notFound("Loja não encontrada", "STORE_NOT_FOUND");
-    }
-
-    if (store.deleted_at) {
-      throw ApiError.notFound("Loja não encontrada", "STORE_NOT_FOUND");
-    }
-
-    if (!store.is_active) {
-      throw ApiError.validation(
-        { storeId: ["Não é possível alterar status de uma loja inativa"] },
-        "Loja inativa",
-      );
-    }
-
-    // 4. Atualizar status temporário
-    await prisma.stores.update({
-      where: { id: storeId },
-      data: {
-        temporarily_closed: closed,
-        updated_at: new Date(),
-      },
-    });
-
-    // 5. Retornar status atualizado
-    return this.getStoreStatus(userId, storeId);
-  }
 }
 
 export const storesService = new StoresService();

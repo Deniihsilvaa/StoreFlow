@@ -693,7 +693,6 @@ model stores {
   legal_responsible_name          String?
   legal_responsible_document      String?
   terms_accepted_at               DateTime?                       @db.Timestamptz(6)
-  temporarily_closed              Boolean?                        @default(false)
   orders                          orders[]
   permission_profiles             permission_profiles[]
   store_costumer                  store_costumer[]
